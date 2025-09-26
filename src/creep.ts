@@ -667,6 +667,10 @@ import getBestWorkerScope, { Scope, spawnWorker, workerScopeHTML } from './worke
 				<div class="block-text-large blurred"></div>
 			</div>
 		</div>
+        <div style="display:flex; gap:12px; justify-content:center;">
+		<button id="save-fingerprint-btn" type="button" disabled>сохранить Fingerprint</button>
+		<button id="save-creep-btn" type="button" >сохранить Creep</button>
+		</div>
 		<div>
 			<strong>Tests</strong>
 			<div>
@@ -711,6 +715,35 @@ import getBestWorkerScope, { Scope, spawnWorker, workerScopeHTML } from './worke
 		window.Fingerprint = JSON.parse(JSON.stringify(fp))
 		// @ts-expect-error does not exist
 		window.Creep = JSON.parse(JSON.stringify(creep))
+
+
+        function downloadAsFile(data: unknown, name) {
+            const json = JSON.stringify(data, null, 2)
+            const blob = new Blob([json], { type: 'application/json;charset=utf-8' })
+            const url = URL.createObjectURL(blob)
+            const ts = new Date().toISOString().replace(/[:.]/g, '-')
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `${name}-${ts}.json`
+            document.body.appendChild(a)
+            a.click()
+            a.remove()
+            URL.revokeObjectURL(url)
+        }
+
+        const save_fp_btn = document.getElementById('save-fingerprint-btn') as HTMLButtonElement | null
+        save_fp_btn.disabled = false
+        save_fp_btn.addEventListener('click', () => {
+            // @ts-ignore
+            downloadAsFile((window as any).Fingerprint, 'creepjs.fingerprint')
+        })
+
+        const save_creep_btn = document.getElementById('save-creep-btn') as HTMLButtonElement | null
+        save_creep_btn.disabled = false
+        save_creep_btn.addEventListener('click', () => {
+            // @ts-ignore
+            downloadAsFile((window as any).Creep, 'creepjs.creep')
+        })
 
 		const fuzzyFingerprint = await getFuzzyHash(fp)
 		const fuzzyFpEl = document.getElementById('fuzzy-fingerprint')
