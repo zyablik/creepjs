@@ -721,10 +721,9 @@ import getBestWorkerScope, { Scope, spawnWorker, workerScopeHTML } from './worke
             const json = JSON.stringify(data, null, 2)
             const blob = new Blob([json], { type: 'application/json;charset=utf-8' })
             const url = URL.createObjectURL(blob)
-            const ts = new Date().toISOString().replace(/[:.]/g, '-')
             const a = document.createElement('a')
             a.href = url
-            a.download = `${name}-${ts}.json`
+            a.download = `${name}.json`
             document.body.appendChild(a)
             a.click()
             a.remove()
@@ -732,17 +731,24 @@ import getBestWorkerScope, { Scope, spawnWorker, workerScopeHTML } from './worke
         }
 
         const save_fp_btn = document.getElementById('save-fingerprint-btn') as HTMLButtonElement | null
+        const model = window.Fingerprint.navigator.userAgentData.model.replaceAll(" ", "-")
+        const device = window.Fingerprint.navigator.device.replaceAll(" ", "-")
+        const suffix = model.length ? model : device
+
+        console.log(window.Fingerprint.navigator.userAgentData)
+        console.log(window.Fingerprint.navigator.userAgentData.model)
+
         save_fp_btn.disabled = false
         save_fp_btn.addEventListener('click', () => {
             // @ts-ignore
-            downloadAsFile((window as any).Fingerprint, 'creepjs.fingerprint')
+            downloadAsFile(window.Fingerprint, 'creepjs.fingerprint-' + suffix)
         })
 
         const save_creep_btn = document.getElementById('save-creep-btn') as HTMLButtonElement | null
         save_creep_btn.disabled = false
         save_creep_btn.addEventListener('click', () => {
             // @ts-ignore
-            downloadAsFile((window as any).Creep, 'creepjs.creep')
+            downloadAsFile(window.Creep, 'creepjs.creep-' + suffix)
         })
 
 		const fuzzyFingerprint = await getFuzzyHash(fp)
