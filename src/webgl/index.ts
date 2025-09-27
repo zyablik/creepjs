@@ -154,7 +154,7 @@ export default async function getCanvasWebgl() {
 			return
 		}
 
-		// gl.clearColor(0.47, 0.7, 0.78, 1)
+		gl.clearColor(0.47, 0.7, 0.78, 1)
 		gl.clear(gl.COLOR_BUFFER_BIT)
 
 		// // based on https://github.com/Valve/fingerprintjs2/blob/master/fingerprint2.js
