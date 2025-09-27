@@ -154,57 +154,57 @@ export default async function getCanvasWebgl() {
 			return
 		}
 
-		gl.clearColor(0.47, 0.7, 0.78, 1)
+		// gl.clearColor(0.47, 0.7, 0.78, 1)
 		gl.clear(gl.COLOR_BUFFER_BIT)
 
-		// // based on https://github.com/Valve/fingerprintjs2/blob/master/fingerprint2.js
-		// const vertexPosBuffer = gl.createBuffer()
-		// gl.bindBuffer(gl.ARRAY_BUFFER, vertexPosBuffer)
-		// const vertices = new Float32Array([-0.9, -0.7, 0, 0.8, -0.7, 0, 0, 0.5, 0])
-		// gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW)
-  //
-		// // create program
-		// const program = gl.createProgram()
-  //
-		// // compile and attach vertex shader
-		// const vertexShader = gl.createShader(gl.VERTEX_SHADER)
-		// gl.shaderSource(vertexShader, `
-		// 	attribute vec2 attrVertex;
-		// 	varying vec2 varyinTexCoordinate;
-		// 	uniform vec2 uniformOffset;
-		// 	void main(){
-		// 		varyinTexCoordinate = attrVertex + uniformOffset;
-		// 		gl_Position = vec4(attrVertex, 0, 1);
-		// 	}
-		// `)
-		// gl.compileShader(vertexShader)
-		// gl.attachShader(program, vertexShader)
-  //
-		// // compile and attach fragment shader
-		// const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER)
-		// gl.shaderSource(fragmentShader, `
-		// 	precision mediump float;
-		// 	varying vec2 varyinTexCoordinate;
-		// 	void main() {
-		// 		gl_FragColor = vec4(varyinTexCoordinate, 1, 1);
-		// 	}
-		// `)
-		// gl.compileShader(fragmentShader)
-		// gl.attachShader(program, fragmentShader)
-  //
-		// // use program
-		// const componentSize = 3
-		// gl.linkProgram(program)
-		// gl.useProgram(program)
-		// program.vertexPosAttrib = gl.getAttribLocation(program, 'attrVertex')
-		// program.offsetUniform = gl.getUniformLocation(program, 'uniformOffset')
-		// gl.enableVertexAttribArray(program.vertexPosArray)
-		// gl.vertexAttribPointer(program.vertexPosAttrib, componentSize, gl.FLOAT, false, 0, 0)
-		// gl.uniform2f(program.offsetUniform, 1, 1)
-  //
-		// // draw
-		// const numOfIndices = 3
-		// gl.drawArrays(gl.LINE_LOOP, 0, numOfIndices)
+		// based on https://github.com/Valve/fingerprintjs2/blob/master/fingerprint2.js
+		const vertexPosBuffer = gl.createBuffer()
+		gl.bindBuffer(gl.ARRAY_BUFFER, vertexPosBuffer)
+		const vertices = new Float32Array([-0.9, -0.7, 0, 0.8, -0.7, 0, 0, 0.5, 0])
+		gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW)
+
+		// create program
+		const program = gl.createProgram()
+
+		// compile and attach vertex shader
+		const vertexShader = gl.createShader(gl.VERTEX_SHADER)
+		gl.shaderSource(vertexShader, `
+			attribute vec2 attrVertex;
+			varying vec2 varyinTexCoordinate;
+			uniform vec2 uniformOffset;
+			void main(){
+				varyinTexCoordinate = attrVertex + uniformOffset;
+				gl_Position = vec4(attrVertex, 0, 1);
+			}
+		`)
+		gl.compileShader(vertexShader)
+		gl.attachShader(program, vertexShader)
+
+		// compile and attach fragment shader
+		const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER)
+		gl.shaderSource(fragmentShader, `
+			precision mediump float;
+			varying vec2 varyinTexCoordinate;
+			void main() {
+				gl_FragColor = vec4(varyinTexCoordinate, 1, 1);
+			}
+		`)
+		gl.compileShader(fragmentShader)
+		gl.attachShader(program, fragmentShader)
+
+		// use program
+		const componentSize = 3
+		gl.linkProgram(program)
+		gl.useProgram(program)
+		program.vertexPosAttrib = gl.getAttribLocation(program, 'attrVertex')
+		program.offsetUniform = gl.getUniformLocation(program, 'uniformOffset')
+		gl.enableVertexAttribArray(program.vertexPosArray)
+		gl.vertexAttribPointer(program.vertexPosAttrib, componentSize, gl.FLOAT, false, 0, 0)
+		gl.uniform2f(program.offsetUniform, 1, 1)
+
+		// draw
+		const numOfIndices = 3
+		gl.drawArrays(gl.LINE_LOOP, 0, numOfIndices)
 		return gl
 	}
 
@@ -366,6 +366,7 @@ export default async function getCanvasWebgl() {
 			try {
 				draw(gl)
 				const { drawingBufferWidth, drawingBufferHeight } = gl
+				console.log(`getWebGLData(${contextType}): drawingBufferWidth = ${drawingBufferHeight} drawingBufferHeight = ${drawingBufferHeight}`)
 				let dataURI = ''
 				if (gl.canvas.constructor.name === 'OffscreenCanvas') {
 					const canvas = document.createElement('canvas')
@@ -378,6 +379,9 @@ export default async function getCanvasWebgl() {
 				// reduce excessive reads to improve performance
 				const width = drawingBufferWidth/15
 				const height = drawingBufferHeight/6
+
+				console.log(`getWebGLData(${contextType}): width = ${width} height = ${height}`)
+
 				const pixels = new Uint8Array(
 					width * height * 4,
 				)
