@@ -712,11 +712,12 @@ import getBestWorkerScope, { Scope, spawnWorker, workerScopeHTML } from './worke
 
 		// expose results to the window
 		// @ts-expect-error does not exist
-        fp.screen.devicePixelRatio = window.devicePixelRatio
+
 		window.Fingerprint = JSON.parse(JSON.stringify(fp))
 		// @ts-expect-error does not exist
 		window.Creep = JSON.parse(JSON.stringify(creep))
 
+        window.Fingerprint.screen.devicePixelRatio = window.devicePixelRatio
 
         function downloadAsFile(data: unknown, name) {
             const json = JSON.stringify(data, null, 2)
