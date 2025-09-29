@@ -731,9 +731,9 @@ import getBestWorkerScope, { Scope, spawnWorker, workerScopeHTML } from './worke
         }
 
         const save_fp_btn = document.getElementById('save-fingerprint-btn') as HTMLButtonElement
-        const model = window.Fingerprint.navigator.userAgentData.model.replaceAll(" ", "-")
-        const device = window.Fingerprint.navigator.device.replaceAll(" ", "-")
-        const suffix = model.length ? model : device
+        // const model = window.Fingerprint.navigator.userAgentData.model.replaceAll(" ", "-")
+        // const device = window.Fingerprint.navigator.device.replaceAll(" ", "-")
+        // const suffix = model.length ? model : device
 
         save_fp_btn.disabled = false
         save_fp_btn.addEventListener('click', () => {
