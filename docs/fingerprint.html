@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script type="text/javascript">
+      async function getFontFingerprint() {
+        const fontList = [
+          'Arial', 'Arial Black', 'Arial Narrow', 'Arial Unicode MS',
+          'Times New Roman', 'Times', 'Courier New', 'Courier',
+          'Liberation Sans', 'Liberation Serif', 'Liberation Mono',
+          'DejaVu Sans', 'DejaVu Serif', 'DejaVu Sans Mono',
+          'Ubuntu', 'Ubuntu Mono', 'Ubuntu Condensed',
+          'Noto Sans Avestan', 'Noto Sans Armenian', 'Noto Sans Cherokee',
+          'Chandas', 'Lohit Devanagari', 'FreeMono',
+        ];
+
+        const results = {};
+        const testString = "mmMwWLliI0O&1";
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+
+        for (const font of fontList) {
+          try {
+            const fontFace = new FontFace(font, `local("${font}")`);
+            await fontFace.load();
+            results[font] = fontFace.status === 'loaded';
+          } catch {
+            results[font] = false;
+          }
+        }
+
+        ctx.font = '16px sans-serif';
+        const baseWidth = ctx.measureText(testString).width;
+
+        for (const font in results) {
+          if (!results[font]) {
+            ctx.font = `16px "${font}", sans-serif`;
+            const testWidth = ctx.measureText(testString).width;
+            results[font] |= Math.abs(testWidth - baseWidth) > 2;
+          }
+        }
+
+        return results;
+      }
+
+      function generateCanvasFingerprint(canvas) {
+        const ctx = canvas.getContext('2d');
+
+        ctx.textBaseline = 'top';
+        ctx.font = '14px Arial';
+        ctx.fillStyle = '#f60';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#069';
+        ctx.fillText('Canvas Fingerprint: @' + new Date().toISOString(), 5, 15);
+
+        ctx.strokeStyle = '#fff';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(canvas.width, canvas.height);
+        ctx.moveTo(0, canvas.height);
+        ctx.lineTo(canvas.width, 0);
+        ctx.stroke();
+
+        const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        gradient.addColorStop(0, '#f00');
+        gradient.addColorStop(0.5, '#0f0');
+        gradient.addColorStop(1, '#00f');
+        ctx.fillStyle = gradient;
+        ctx.globalAlpha = 0.3;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const dataURL = canvas.toDataURL();
+
+        function simpleHash(str) {
+          let hash = 0;
+          for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = (hash << 5) - hash + char;
+            hash |= 0;
+          }
+          return Math.abs(hash).toString(16);
+        }
+
+        return {
+          dataURL: dataURL,
+          hash: simpleHash(dataURL),
+          details: {
+            renderer: ctx.getContextAttributes(),
+            textMetrics: ctx.measureText('Test'),
+            supported: {
+              filter: typeof ctx.filter !== 'undefined',
+              textDrawing: typeof ctx.fillText !== 'undefined'
+            }
+          }
+        };
+      }
+
+      document.addEventListener('DOMContentLoaded', async () => {
+        const separator = "<td style='border-top: 10px solid transparent'></td>"
+
+        var nav_fields = {
+          "webdriver": navigator.webdriver,
+          "appName": navigator.appName,
+          "appVersion": navigator.appVersion,
+          "deviceMemory": navigator.deviceMemory,
+          "hardwareConcurrency": navigator.hardwareConcurrency,
+          "language": navigator.language,
+          "languages": JSON.stringify(navigator.languages),
+          "maxTouchPoints": navigator.maxTouchPoints,
+          "onLine": navigator.onLine,
+          "platform": navigator.platform,
+          "vendor": navigator.vendor,
+          "userAgent": navigator.userAgent,
+          "userAgentData": navigator.userAgentData,
+        }
+
+        str = "<table>"
+        for (let [key, value] of Object.entries(nav_fields)) {
+          str += `<tr><td>navigator.${key}</td> <td>${JSON.stringify(value)}</td> </tr>`
+        }
+
+        str += separator
+
+        let plugins = Array.from(navigator.plugins).map(p => ({
+          name: p.name,
+          filename: p.filename,
+          description: p.description,
+          mimeTypes: Array.from(p).map(mt => ({
+            type: mt.type,
+            description: mt.description,
+            suffixes: mt.suffixes
+          }))
+        }));
+
+        str += `<tr><td>navigator.plugins.legth</td> <td>${navigator.plugins.length}</td> </tr>`
+        for (let [i, plugin] of Object.entries(plugins)) {
+           str += `<tr><td>navigator.plugins[${i}] = </td> <td>${JSON.stringify(plugin)}</td> </tr>`
+        }
+        str += separator
+
+        let mimeTypes = Array.from(navigator.mimeTypes).map(mt => ({
+          type: mt.type,
+          description: mt.description,
+          suffixes: mt.suffixes,
+          enabledPlugin: mt.enabledPlugin && mt.enabledPlugin.name ? mt.enabledPlugin.name : null
+        }));
+
+        str += `<tr><td>navigator.mimeTypes.legth</td> <td>${navigator.mimeTypes.length}</td> </tr>`
+        for (let [i, mimeType] of Object.entries(mimeTypes)) {
+           str += `<tr><td>navigator.mimeTypes[${i}] = </td> <td>${JSON.stringify(mimeType)}</td> </tr>`
+        }
+        str += separator
+
+        str += `<tr><td>window.chrome</td><td>${JSON.stringify(window.chrome)}</td></tr>`
+        str += `<tr><td>chrome.runtime</td><td>${JSON.stringify(chrome.runtime)}</td></tr>`
+        str += `<tr><td>chrome.app</td><td>${JSON.stringify(chrome.app)}</td></tr>`
+
+        str += separator
+
+        var high_entr_fields = ['architecture', 'bitness', 'formFactors', 'fullVersionList', 'model', 'platformVersion', 'uaFullVersion', 'wow64' ]
+        high_entr_values = await navigator.userAgentData.getHighEntropyValues(high_entr_fields)
+        for (let [key, value] of Object.entries(high_entr_values)) {
+          str += `<tr> <td>n7r.userAgentData.HighEntro().${key}</td> <td>${JSON.stringify(value)}</td></tr>`
+        }
+
+        str += separator
+
+        str += `<tr><td>n7r.getBattery.charging = </td><td>${(await navigator.getBattery()).charging}</td></tr>
+                <tr><td>n7r.getBattery.level = </td><td>${(await navigator.getBattery()).level}</td></tr>
+                <tr><td>n7r.getBattery.chargingTime = </td><td>${(await navigator.getBattery()).chargingTime}</td></tr>
+                <tr><td>n7r.getBattery.dichargingTime = </td><td>${(await navigator.getBattery()).dischargingTime}</td></tr>`
+
+        str += separator
+
+        function getTemporaryStorageUsage() {
+          return new Promise((resolve, reject) => {
+            navigator.webkitTemporaryStorage.queryUsageAndQuota((usage, quota) => {
+            resolve({ usage: usage, quota: quota });
+            })
+          })
+        }
+
+        const { usage, quota } = await getTemporaryStorageUsage();
+        str += `<tr><td>n7r.webkitTemporaryStorage.queryUsageAndQuota.quota = </td><td>${quota}</td></tr>
+                <tr><td>n7r.webkitTemporaryStorage.queryUsageAndQuota.usage = </td><td>${usage}</td></tr>`
+
+        str += `<tr><td>n7r.storage.estimate().quota = </td><td>${(await navigator.storage.estimate()).quota}</td></tr>
+                <tr><td>n7r.storage.estimate().usage = </td><td>${(await navigator.storage.estimate()).usage}</td></tr>`
+
+        str += separator
+
+        const media_devices = await navigator.mediaDevices.enumerateDevices();
+        for (let i = 0; i < media_devices.length; i++) {
+          str += `<tr><td>navigator.mediaDevices[${i}] = </td><td>${JSON.stringify(media_devices[i])}</td></tr>`
+        }
+
+        str += separator
+
+        hasTouch = () => {
+          try {
+            return 'ontouchstart' in window && !!document.createEvent('TouchEvent')
+          } catch (err) {
+            return false
+          }
+        }
+
+        str += `<tr><td> window.ontouchstart && !!document.createEvent('TouchEvent') = </td><td>${hasTouch()}</td></tr>`
+
+        str += separator
+
+        var window_fields = {
+          "screenLeft": window.screenLeft,
+          "screenTop": window.screenTop,
+          "innerWidth": window.innerWidth,
+          "innerHeight": window.innerHeight,
+          "outerWidth": window.outerWidth,
+          "outerHeight": window.outerHeight,
+          "devicePixelRatio": window.devicePixelRatio
+        }
+        for (let [key, value] of Object.entries(window_fields)) {
+          str += `<tr><td>screen.${key}</td><td>${value}</td></tr>`
+        }
+
+        str += separator
+
+        var screen_fields = {
+          "availLeft": screen.availLeft,
+          "availTop": screen.availTop,
+          "width": screen.width,
+          "height": screen.height,
+          "availWidth": screen.availWidth,
+          "availHeight": screen.availHeight,
+          "colorDepth": screen.colorDepth,
+          "pixelDepth": screen.pixelDepth,
+          "isExtended": screen.isExtended,
+          "orientation.type": screen.orientation.type,
+          "orientation.angle": screen.orientation.angle,
+        }
+        for (let [key, value] of Object.entries(screen_fields)) {
+          str += `<tr><td>screen.${key}</td><td>${value}</td></tr>`
+        }
+
+        str += separator
+
+        function getPosition(options) {
+          return new Promise((resolve, reject) =>
+            navigator.geolocation.getCurrentPosition(resolve, reject, options));}
+
+        try {
+          const location = await getPosition({ maximumAge: 10000, timeout: 1000, enableHighAccuracy: true });
+
+          str += `
+              <tr><td>navigator.geolocation.latitude</td><td>${location.coords.latitude}</td></tr>
+              <tr><td>navigator.geolocation.longitude</td><td>${location.coords.longitude}</td></tr>
+              <tr><td>navigator.geolocation.altitude</td><td>${location.coords.altitude}</td></tr>
+              <tr><td>navigator.geolocation.accuracy</td><td>${location.coords.accuracy}</td></tr>
+              <tr><td>navigator.geolocation.altitudeAccuracy</td><td>${location.coords.altitudeAccuracy}</td></tr>
+              <tr><td>navigator.geolocation.heading</td><td>${location.coords.heading}</td></tr>
+              <tr><td>navigator.geolocation.speed</td><td>${location.coords.speed}</td></tr>`;
+        } catch (err) {
+          console.error('Geolocation error:', err.code, err.message);
+          str += `<tr><td>navigator.geolocation.getCurrentPosition()</td><td>error: ${err.code} ${err.message}</td></tr>`
+        }
+
+        str += separator
+
+        const canvas = document.getElementById("canvas");
+        const gl = canvas.getContext("webgl");
+        const range = gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS);
+
+        const renderer_info = gl.getExtension("WEBGL_debug_renderer_info");
+
+        str += `<tr><td>UNMASKED_VENDOR_WEBGL = </td><td>${gl.getParameter(renderer_info.UNMASKED_VENDOR_WEBGL)}</td></tr>
+                <tr><td>UNMASKED_RENDERER_WEBGL = </td><td>${gl.getParameter(renderer_info.UNMASKED_RENDERER_WEBGL)}</td></tr>`
+
+        exts = gl.getSupportedExtensions()
+        str += `<tr><td> gl.getSupportedExtensions: ${exts.length} </td><td>${exts.join(', ')}</td></tr>`
+
+        str += separator
+
+        video = document.createElement('video');
+        str += `<tr><td>video.canPlayType('video/not-supported') = </td><td>${video.canPlayType('video/not-supported')}</td></tr>
+                <tr><td>video.canPlayType('video/h264') = </td><td>${video.canPlayType('video/h264')}</td></tr>
+                <tr><td>video.canPlayType('video/webm') = </td><td>${video.canPlayType('video/webm')}</td></tr>`
+
+        str += separator
+
+        audio = new Audio();
+        str += `<tr><td>audio.canPlayType('audio/not-supported') = </td><td>${audio.canPlayType('audio/not-supported')}</td></tr>
+                <tr><td>audio.canPlayType('audio/ogg') = </td><td>${audio.canPlayType('audio/ogg')}</td></tr>
+                <tr><td>audio.canPlayType('audio/m4a') = </td><td>${audio.canPlayType('audio/m4a')}</td></tr>`
+
+        str += separator
+
+        str += `<tr><td>Intl.DateTimeFormat().resolvedOptions().timeZone = </td><td>${Intl.DateTimeFormat().resolvedOptions().timeZone}</td></tr>
+                <tr><td>new Date().getTimezoneOffset() = </td><td>${(new Date().getTimezoneOffset())}</td></tr>
+               `
+        str += separator
+
+        str += "<tr><td><canvas id=canvas_1 width=200 height=50></canvas></td><td id=hash_1></td></tr>"
+        str += "<tr><td><canvas id=canvas_2 width=200 height=50></canvas></td><td id=hash_2></td></tr>"
+
+        str += "</table>"
+
+        results = await getFontFingerprint()
+        console.log("Font Availability:", JSON.stringify(results));
+
+        str += "<table border=1><tr><th>Font</th><th>Available</th></tr>";
+        for (const font in results) {
+          str +=
+            `<tr>
+              <td style="font-family:'${font}'">${font}</td>
+              <td style="color:${results[font] ? 'green' : 'red'}"> ${results[font] ? "yes" : "no" }</td>
+            </tr>`;
+        }
+        str += '</table>';
+        var content = document.getElementById("content")
+        content.innerHTML = str
+
+        fingerprint1 = generateCanvasFingerprint(document.getElementById("canvas_1"));
+        console.log('Canvas Fingerprint Hash:', fingerprint1.hash);
+        document.getElementById("hash_1").innerHTML = "hash = " + fingerprint1.hash
+
+        fingerprint2 = generateCanvasFingerprint(document.getElementById("canvas_2"));
+        console.log('Canvas Fingerprint Hash:', fingerprint2.hash);
+        document.getElementById("hash_2").innerHTML = "hash = " + fingerprint2.hash
+      });
+    </script>
+  </head>
+  <body>
+    <p id=content></p>
+    <canvas id=canvas> </canvas>
+  </body>
+</html>
