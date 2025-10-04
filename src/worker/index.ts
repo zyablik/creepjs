@@ -201,6 +201,11 @@ export async function spawnWorker() {
 			minimumFractionDigits: 0,
 			maximumFractionDigits: 0,
 		})
+
+        console.log("language = ", language)
+        console.log("systemCurrencyLocale = ", systemCurrencyLocale)
+        console.log("engineCurrencyLocale = ", engineCurrencyLocale)
+
 		const localeEntropyIsTrusty = engineCurrencyLocale == systemCurrencyLocale
 		const localeIntlEntropyIsTrusty = new Set((''+language).split(',')).has(''+locale)
 

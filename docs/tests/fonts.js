@@ -157,6 +157,11 @@
 					dimensions.fontAscent != base[basefont].fontAscent ||
 					dimensions.fontDescent != base[basefont].fontDescent
 				)
+
+                if(support || extraSupport) {
+                    console.log("family = ", family, " basefont = ", basefont, " font = ", font, " dimensions = ", dimensions, " base[" + basefont + "] = ", base[basefont])
+                }
+
 				if (((!isNaN(dimensions.ascent) && !isNaN(dimensions.fontAscent)) && (support || extraSupport)) ||
 					(!isNaN(dimensions.ascent) && support)) {
 					detectedCombined.add(font)
