@@ -209,6 +209,7 @@
 				fontAscent: [...detectedViaFontAscent],
 				fontDescent: [...detectedViaFontDescent]
 			}
+			console.log("fonts = ", fonts)
 
 			const perf = performance.now() - start
 			patch(document.getElementById(`text-metrics${offscreen ? '-offscreen' : ''}`), html`
