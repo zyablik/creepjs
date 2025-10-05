@@ -189,13 +189,13 @@
 				if (!isNaN(dimensions.fontAscent) &&
 					(dimensions.fontAscent != base[basefont].fontAscent)
 				) {
-                    console.log("dimensions.fontAscent: ", dimensions.fontAscent, " basefont = ", basefont, " base[basefont].fontAscent = ", base[basefont].fontAscent)
+                    console.log("font = ", font ," dimensions.fontAscent: ", dimensions.fontAscent, " basefont = ", basefont, " base[basefont].fontAscent = ", base[basefont].fontAscent)
 					detectedViaFontAscent.add(font)
 				}
 				if (!isNaN(dimensions.fontDescent) &&
-                    console.log("dimensions.fontDescent: ", dimensions.fontDescent, " basefont = ", basefont, " base[basefont].fontDescent = ", base[basefont].fontDescent)
 					(dimensions.fontDescent != base[basefont].fontDescent)
 				) {
+                    console.log("font = ", font, " dimensions.fontDescent: ", dimensions.fontDescent, " basefont = ", basefont, " base[basefont].fontDescent = ", base[basefont].fontDescent)
 					detectedViaFontDescent.add(font)
 				}
 				return
@@ -1021,13 +1021,13 @@
 		try {
 			await new Promise(setTimeout).catch(e => {})
 			const start = performance.now()
-            console.error("getFontFaceLoadFonts(): >>> ")
+            console.warn("getFontFaceLoadFonts(): >>> ")
 
             const fontFaceList = list.map(font => new FontFace(font, `local("${font}")`))
 			const responseCollection = await Promise
 				.allSettled(fontFaceList.map(font => font.load()))
 
-            console.error("getFontFaceLoadFonts(): <<<")
+            console.warn("getFontFaceLoadFonts(): <<<")
 
 			const fonts = responseCollection.reduce((acc, font) => {
 				if (font.status == 'fulfilled') {
