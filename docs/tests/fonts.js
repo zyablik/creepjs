@@ -159,7 +159,7 @@
 				)
 
                 if(support || extraSupport) {
-                    console.log("family = ", family, " basefont = ", basefont, " font = ", font, " dimensions = ", dimensions, " base[" + basefont + "] = ", base[basefont])
+                    // console.log("family = ", family, " basefont = ", basefont, " font = ", font, " dimensions = ", dimensions, " base[" + basefont + "] = ", base[basefont])
                 }
 
 				if (((!isNaN(dimensions.ascent) && !isNaN(dimensions.fontAscent)) && (support || extraSupport)) ||
@@ -209,7 +209,7 @@
 				fontAscent: [...detectedViaFontAscent],
 				fontDescent: [...detectedViaFontDescent]
 			}
-			console.log("fonts = ", fonts)
+			console.log("getTextMetricsFonts(): fonts = ", fonts)
 
 			const perf = performance.now() - start
 			patch(document.getElementById(`text-metrics${offscreen ? '-offscreen' : ''}`), html`
@@ -1028,6 +1028,8 @@
 				}
 				return acc
 			}, [])
+
+            console.log("getFontFaceLoadFonts(): fonts = " , fonts)
 			const perf = performance.now() - start
 			const listLen = getListAll().length
 			patch(document.getElementById('fontface'), html`
