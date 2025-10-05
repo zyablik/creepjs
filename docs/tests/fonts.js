@@ -189,11 +189,11 @@
 				if (!isNaN(dimensions.fontAscent) &&
 					(dimensions.fontAscent != base[basefont].fontAscent)
 				) {
-                    console.warning("dimensions.fontAscent: ", dimensions.fontAscent, " basefont = ", basefont, " base[basefont].fontAscent = ", base[basefont].fontAscent)
+                    console.log("dimensions.fontAscent: ", dimensions.fontAscent, " basefont = ", basefont, " base[basefont].fontAscent = ", base[basefont].fontAscent)
 					detectedViaFontAscent.add(font)
 				}
 				if (!isNaN(dimensions.fontDescent) &&
-                    console.warning("dimensions.fontDescent: ", dimensions.fontDescent, " basefont = ", basefont, " base[basefont].fontDescent = ", base[basefont].fontDescent)
+                    console.log("dimensions.fontDescent: ", dimensions.fontDescent, " basefont = ", basefont, " base[basefont].fontDescent = ", base[basefont].fontDescent)
 					(dimensions.fontDescent != base[basefont].fontDescent)
 				) {
 					detectedViaFontDescent.add(font)
