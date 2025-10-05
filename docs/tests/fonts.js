@@ -168,11 +168,14 @@
 				}
 				if (!isNaN(dimensions.ascent) &&
 					dimensions.ascent != base[basefont].ascent) {
+                    console.log("font = ", font, " dimensions.ascent: ", dimensions.ascent, " basefont = ", basefont, " base[basefont].ascent = ", base[basefont].ascent)
 					detectedViaAscent.add(font)
 				}
 				if (!isNaN(dimensions.descent) &&
 					dimensions.descent != base[basefont].descent) {
-					detectedViaDescent.add(font)
+                    console.log("font = ", font ," dimensions.descent: ", dimensions.descent, " basefont = ", basefont, " base[basefont].fontAscent = ", base[basefont].descent)
+
+                    detectedViaDescent.add(font)
 				}
 				if (!isNaN(dimensions.left) &&
 					dimensions.left != base[basefont].left) {
@@ -189,13 +192,11 @@
 				if (!isNaN(dimensions.fontAscent) &&
 					(dimensions.fontAscent != base[basefont].fontAscent)
 				) {
-                    console.log("font = ", font ," dimensions.fontAscent: ", dimensions.fontAscent, " basefont = ", basefont, " base[basefont].fontAscent = ", base[basefont].fontAscent)
 					detectedViaFontAscent.add(font)
 				}
 				if (!isNaN(dimensions.fontDescent) &&
 					(dimensions.fontDescent != base[basefont].fontDescent)
 				) {
-                    console.log("font = ", font, " dimensions.fontDescent: ", dimensions.fontDescent, " basefont = ", basefont, " base[basefont].fontDescent = ", base[basefont].fontDescent)
 					detectedViaFontDescent.add(font)
 				}
 				return
