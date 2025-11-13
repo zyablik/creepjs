@@ -632,7 +632,10 @@
 
         str += "</table>"
 
-        results = await getFontFingerprint()
+//        results = await getFontFingerprint(fontCandidates)
+
+        results = detectInstalledFonts(fontCandidates)
+
         console.log("Font Availability:", JSON.stringify(results));
 
         str += "<table border=1><tr><th>Font</th><th>Available</th></tr>";
@@ -675,8 +678,7 @@
         URL.revokeObjectURL(url)
       }
 
-      async function getFontFingerprint() {
-        const fontList = [
+       const fontCandidates = [
           'Arial', 'Arial Black', 'Arial Narrow', 'Arial Unicode MS',
           'Times New Roman', 'Times', 'Courier New', 'Courier',
           'Liberation Sans', 'Liberation Serif', 'Liberation Mono',
@@ -723,9 +725,9 @@
   "Roboto Condensed ExtraBold Italic",
   "Roboto Condensed Black Italic",
   "Droid Sans Mono",
+     ];
 
-
-        ];
+      async function getFontFingerprint(fontList) {
 
         const results = {};
         const testString = "mmMwWLliI0O&1";
@@ -755,6 +757,58 @@
 
         return results;
       }
+
+
+function detectInstalledFonts(fontNames) {
+  const testString = 'mmmmmmmmmwwwwwww0123456789абвгдABCD'; // чтобы ширина была чувствительной
+  const testSize = '72px'; // побольше — разница заметнее
+  const body = document.body || document.documentElement;
+
+  const span = document.createElement('span');
+  span.textContent = testString;
+  span.style.fontSize = testSize;
+  span.style.position = 'absolute';
+  span.style.left = '-9999px';
+  span.style.top = '-9999px';
+  span.style.whiteSpace = 'nowrap';
+
+  const baseMetrics = {};
+  body.appendChild(span);
+
+  // Сначала меряем базовые шрифты
+  const BASE_FONTS = ['monospace', 'sans-serif', 'serif'];
+
+  BASE_FONTS.forEach(base => {
+    span.style.fontFamily = base;
+    const rect = span.getBoundingClientRect();
+    baseMetrics[base] = { width: rect.width, height: rect.height };
+  });
+
+  const result = {};
+
+  fontNames.forEach(name => {
+    let isInstalled = false;
+
+    for (const base of BASE_FONTS) {
+      span.style.fontFamily = `"${name}",${base}`;
+      const rect = span.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+
+      const baseRect = baseMetrics[base];
+      // Если размеры отличаются от базового — значит, подставился настоящий шрифт
+      if (w !== baseRect.width || h !== baseRect.height) {
+        isInstalled = true;
+        break;
+      }
+    }
+
+    result[name] = isInstalled;
+  });
+
+  span.remove();
+  return result;
+}
 
       function generateCanvasFingerprint(canvas) {
         const ctx = canvas.getContext('2d');
