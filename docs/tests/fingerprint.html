@@ -45,11 +45,11 @@
 
             connection: {
               downlink: navigator?.connection?.downlink,
-              downlinkMax: navigator?.connection?.downlinkMax,
-              effectiveType: navigator?.connection?.effectiveType,
+              downlinkMax: navigator?.connection?.downlinkMax || navigator?.connection?.downlink,
+              effectiveType: "k" + navigator?.connection?.effectiveType?.toUpperCase(),
               rtt: navigator?.connection?.rtt,
               saveData: navigator?.connection?.saveData,
-              type: navigator?.connection?.type,
+              type: navigator?.connection?.type || "unknown",
             },
 
             plugings: null,
@@ -58,8 +58,8 @@
             battery: {
               charging: battery?.charging,
               level: battery?.level,
-              chargingTime: battery?.chargingTime,
-              dischargingTime: battery?.dischargingTime
+              chargingTime: battery?.chargingTime == Infinity ? 1e308 : battery?.chargingTime,
+              dischargingTime: battery?.dischargingTime == Infinity ? 1e308 : battery?.dischargingTime,
             },
 
             bluetooth: {
@@ -94,8 +94,8 @@
 
           screen: {
             orientation: {
-              type: screen.orientation.type,
-              angle: screen.orientation.angle,
+              type: screen?.orientation?.type.replace(/-/, "_"),
+              angle: screen?.orientation?.angle,
             },
             availHeight: screen.availHeight,
             availWidth: screen.availWidth,
@@ -130,10 +130,10 @@
           },
 
           misc: {
-            window_chrome: window.chrome,
-            chrome_runtime: chrome?.runtime,
-            chrome_app: chrome?.app,
-            window_ontouchstart: window.ontouchstart,
+            window_chrome: String(window.chrome),
+            chrome_runtime: String(chrome?.runtime),
+            chrome_app: String(chrome?.app),
+            window_ontouchstart: String(window.ontouchstart),
             touch_event: hasTouch(),
             window_keys: Object.getOwnPropertyNames(window),
           },
@@ -151,6 +151,7 @@
             parameters: {},
             extensions_gl1: [],
             extensions_gl2: [],
+            precisions: {},
           },
 
           voices: Array.from(speechSynthesis?.getVoices() ||[]).map((voice) => ({
@@ -161,12 +162,31 @@
             default: voice.default
           })),
 
+          audioCodecs: {},
+
+          videoCodecs: {},
+
           webrtc: {
+            offer: {
+              audio: {
+                media_line: null,
+                rtpmap_lines: []
+              },
+
+              video: {
+                media_line: null,
+                rtpmap_lines: []
+              },
+            },
+
             addresses: null,
             sdp: null,
             connectionLineIpAddress: null,
             candidateIpAddress: null,
           },
+
+          fonts: [],
+
         };
 
         fp.navigator.plugins = Array.from(navigator.plugins || []).map((p) => ({
@@ -218,7 +238,16 @@
         gl2_context = canvas2.getContext("webgl2");
         fp.webgl.extensions_gl2 = gl2_context.getSupportedExtensions();
 
-        ["ALIASED_LINE_WIDTH_RANGE", "ALIASED_POINT_SIZE_RANGE", "MAX_3D_TEXTURE_SIZE", "MAX_ARRAY_TEXTURE_LAYERS",
+        ["ALIASED_LINE_WIDTH_RANGE", "ALIASED_POINT_SIZE_RANGE"].forEach(key => {
+          try {
+            range = gl2_context.getParameter(gl2_context[key])
+            fp.webgl.parameters[key] = {min: range[0], max: range[1]}
+          } catch (e) {
+            fp.webgl.parameters[key] = null
+          }
+        });
+
+        ["MAX_3D_TEXTURE_SIZE", "MAX_ARRAY_TEXTURE_LAYERS",
          "MAX_CLIENT_WAIT_TIMEOUT_WEBGL", "MAX_COLOR_ATTACHMENTS", "MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS", "MAX_COMBINED_TEXTURE_IMAGE_UNITS",
          "MAX_COMBINED_UNIFORM_BLOCKS", "MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS", "MAX_CUBE_MAP_TEXTURE_SIZE", "MAX_DRAW_BUFFERS",
          "MAX_ELEMENTS_INDICES", "MAX_ELEMENTS_VERTICES", "MAX_ELEMENT_INDEX", "MAX_FRAGMENT_INPUT_COMPONENTS",
@@ -228,7 +257,7 @@
          "MAX_TRANSFORM_FEEDBACK_SEPARATE_ATTRIBS", "MAX_TRANSFORM_FEEDBACK_SEPARATE_COMPONENTS", "MAX_UNIFORM_BLOCK_SIZE", "MAX_UNIFORM_BUFFER_BINDINGS",
          "MAX_VARYING_COMPONENTS", "MAX_VARYING_VECTORS", "MAX_VERTEX_ATTRIBS", "MAX_VERTEX_OUTPUT_COMPONENTS",
          "MAX_VERTEX_TEXTURE_IMAGE_UNITS", "MAX_VERTEX_UNIFORM_BLOCKS", "MAX_VERTEX_UNIFORM_COMPONENTS", "MAX_VERTEX_UNIFORM_VECTORS",
-         "MAX_VIEWPORT_DIMS", "MIN_PROGRAM_TEXEL_OFFSET", ].forEach(key =>
+         "MIN_PROGRAM_TEXEL_OFFSET", ].forEach(key =>
         {
           try {
             fp.webgl.parameters[key] = gl2_context.getParameter(gl2_context[key])
@@ -237,14 +266,38 @@
           }
         });
 
+        key = "MAX_VIEWPORT_DIMS";
+        try {
+          dims = gl2_context.getParameter(gl2_context[key])
+          fp.webgl.parameters[key] = {width: dims[0], height: dims[1]}
+        } catch (e) {
+          fp.webgl.parameters[key] = null
+        }
+
         renderer_info = gl1_context.getExtension("WEBGL_debug_renderer_info");
 
-        try {
+//        try {
           fp.webgl.parameters.UNMASKED_RENDERER_WEBGL = gl1_context.getParameter(renderer_info.UNMASKED_RENDERER_WEBGL)
           fp.webgl.parameters.UNMASKED_VENDOR_WEBGL = gl1_context.getParameter(renderer_info.UNMASKED_VENDOR_WEBGL)
-          ani_ext = gl.getExtension('EXT_texture_filter_anisotropic')
-          fp.webgl.parameters.MAX_TEXTURE_MAX_ANISOTROPY_EXT = ani_ext.getParameter(ani_ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT)
-        } catch (e) {}
+          ani_ext = gl1_context.getExtension('EXT_texture_filter_anisotropic')
+          if(ani_ext) {
+            fp.webgl.parameters.MAX_TEXTURE_MAX_ANISOTROPY_EXT = gl1_context.getParameter(ani_ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT)
+          } else {
+            fp.webgl.parameters.MAX_TEXTURE_MAX_ANISOTROPY_EXT = null
+          }
+//        } catch (e) {};
+
+        ["VERTEX_SHADER", "FRAGMENT_SHADER"].forEach(shader_type => {
+          fp.webgl.precisions[shader_type.toLowerCase()] = {};
+          ["LOW_FLOAT", "MEDIUM_FLOAT", "HIGH_FLOAT", "LOW_INT", "MEDIUM_INT", "HIGH_INT"].forEach(precision_type => {
+             precision = gl1_context.getShaderPrecisionFormat(gl1_context[shader_type], gl1_context[precision_type])
+             fp.webgl.precisions[shader_type.toLowerCase()][precision_type.toLowerCase()] = {
+               precision: precision.precision,
+               max: precision.rangeMax,
+               min: precision.rangeMin,
+             }
+          });
+        });
 
         // webrtc
 
@@ -274,15 +327,34 @@
         offer = await connection.createOffer({ offerToReceiveAudio: 1, offerToReceiveVideo: 1 })
         connection.setLocalDescription(offer)
 
+        m = offer.sdp.match(new RegExp(/m=audio [^\s]+ [^\s]+ ([^\n|\r]+)/)) || []
+        fp.webrtc.offer.audio.media_line = m[0]
+        adescs = m[1]?.split(' ')
+
+        adescs?.forEach(adesc => {
+          fp.webrtc.offer.audio.rtpmap_lines.push(...(offer.sdp.match(RegExp(`a=(rtpmap|fmtp|rtcp-fb):${adesc} (.+)`, 'g'))))
+        });
+
+        m = offer.sdp.match(new RegExp(/m=video [^\s]+ [^\s]+ ([^\n|\r]+)/)) || []
+        fp.webrtc.offer.video.media_line = m[0]
+        vdescs = m[1]?.split(' ')
+
+        vdescs?.forEach(vdesc => {
+          fp.webrtc.offer.video.rtpmap_lines.push(...(offer.sdp.match(RegExp(`a=(rtpmap|fmtp|rtcp-fb):${vdesc} (.+)`, 'g'))))
+        })
+
         ice_promise = get_ice_addresses(connection);
 
         ice_promise.then((addresses) => {
           fp.webrtc.addresses = addresses
-          fp.webrtc.sdp = connection.localDescription.sdp
+          fp.webrtc.sdp = connection.localDescription.sdp.replace(/http:\/\//g, "http:_/").split(/\r\n/)
           fp.webrtc.connectionLineIpAddress = connection.localDescription.sdp.match(/c=IN\s.+\s/i)?.[0].trim()
           fp.webrtc.candidateIpAddress = connection.localDescription.sdp.match(/(udp|tcp)\s(\d|\w)+\s((\d|\w|(\.|\:))+)(?=\s)/i)?.[0]
           try { connection.close(); } catch(e){}
         });
+
+
+
 
         // ----
 
@@ -298,7 +370,7 @@
         const save_fp_btn = document.getElementById('save-fingerprint-btn')
         save_fp_btn.disabled = false
         save_fp_btn.addEventListener('click', () => {
-          downloadAsFile(fp, 'fingerprint')
+          downloadAsFile({id: 777, "fingerprint": fp}, 'fingerprint')
         })
 
         var content = document.getElementById("content")

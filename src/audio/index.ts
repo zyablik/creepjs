@@ -103,6 +103,10 @@ export default async function getOfflineAudioContext() {
 		const dataArray = new Float32Array(analyser.frequencyBinCount)
 		analyser.getFloatFrequencyData?.(dataArray)
 		const floatFrequencyUniqueDataSize = new Set(dataArray).size
+
+		console.log("analyser.frequencyBinCount = ", analyser.frequencyBinCount, " floatFrequencyUniqueDataSize = ", floatFrequencyUniqueDataSize)
+        console.log("dataArray = ", dataArray)
+
 		if (floatFrequencyUniqueDataSize > 1) {
 			lied = true
 			const floatFrequencyDataLie = `expected -Infinity (silence) and got ${floatFrequencyUniqueDataSize} frequencies`
@@ -166,13 +170,21 @@ export default async function getOfflineAudioContext() {
 			dynamicsCompressor.connect(analyser)
 			dynamicsCompressor.connect(context.destination)
 
-			oscillator.start(0)
+            console.log("1 dynamicsCompressor.reduction = ", dynamicsCompressor.reduction)
+
+            oscillator.start(0)
 			context.startRendering()
+            console.log("2 dynamicsCompressor.reduction = ", dynamicsCompressor.reduction)
 
 			return context.addEventListener('complete', (event) => {
 				try {
+                    console.log("3 dynamicsCompressor.reduction = ", dynamicsCompressor.reduction)
+
 					dynamicsCompressor.disconnect()
 					oscillator.disconnect()
+
+            console.log("4 dynamicsCompressor.reduction = ", dynamicsCompressor.reduction)
+
 					const floatFrequencyData = new Float32Array(analyser.frequencyBinCount)
 					analyser.getFloatFrequencyData?.(floatFrequencyData)
 					const floatTimeDomainData = new Float32Array(analyser.fftSize)
@@ -222,6 +234,9 @@ export default async function getOfflineAudioContext() {
 		}
 		const getSum = (arr?: Float32Array | number[]) => !arr ? 0 : [...arr]
 			.reduce((acc, curr) => (acc += Math.abs(curr)), 0)
+
+        console.log("floatFrequencyData = ", floatFrequencyData)
+
 		const floatFrequencyDataSum = getSum(floatFrequencyData)
 		const floatTimeDomainDataSum = getSum(floatTimeDomainData)
 
@@ -234,6 +249,8 @@ export default async function getOfflineAudioContext() {
 		const copySample = getSnapshot([...copy], 4500, 4600)
 		const binsSample = getSnapshot([...bins], 4500, 4600)
 		const sampleSum = getSum(getSnapshot([...bins], 4500, bufferLen))
+
+        console.log()
 
 		// detect lies
 		if (audioIsFake) {

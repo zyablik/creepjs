@@ -121,6 +121,8 @@
 	}
 
 	const getTextMetricsFonts = async ({ context, baseFonts, families }) => {
+        console.log("baseFonts = ", baseFonts)
+        console.log("families = ", families)
 		const { constructor: { name } } = context || {}
 		const offscreen = /offscreen/i.test(''+name)
 		const listLen = getList().length
@@ -173,7 +175,7 @@
 				}
 				if (!isNaN(dimensions.descent) &&
 					dimensions.descent != base[basefont].descent) {
-                    console.log("font = ", font ," dimensions.descent: ", dimensions.descent, " basefont = ", basefont, " base[basefont].fontAscent = ", base[basefont].descent)
+                    console.log("font = ", font ," dimensions.descent: ", dimensions.descent, " basefont = ", basefont, " base[basefont].descent = ", base[basefont].descent)
 
                     detectedViaDescent.add(font)
 				}

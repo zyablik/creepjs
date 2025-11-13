@@ -195,12 +195,17 @@ const getIPAddress = (sdp) => {
 
 export default async function getWebRTCData(): Promise<Record<string, unknown> | null> {
 	return new Promise(async (resolve) => {
+        console.log("getWebRTCData(): window.RTCPeerConnection = ", window.RTCPeerConnection)
 		if (!window.RTCPeerConnection) {
 			return resolve(null)
 		}
 
 		const config = {
 			iceCandidatePoolSize: 1,
+
+// iceServers: [{   urls: [ "stun:fr-turn7.xirsys.com" ]}, {   username: "uwCuhhw9MIj91x4NC_02KPuPEIv4yfvqRlGWmwKPAlmf78GO6ReiJ1zmxIzAE2XoAAAAAGjljXR6bG9nbGlr",   credential: "0492f622-a3c9-11f0-99f4-5e2012a06e7d",   urls: [       "turn:fr-turn7.xirsys.com:80?transport=udp",       "turn:fr-turn7.xirsys.com:3478?transport=udp",       "turn:fr-turn7.xirsys.com:80?transport=tcp",       "turn:fr-turn7.xirsys.com:3478?transport=tcp",       "turns:fr-turn7.xirsys.com:443?transport=tcp",       "turns:fr-turn7.xirsys.com:5349?transport=tcp"   ]}]
+
+
 			iceServers: [
 				{
 					urls: [
@@ -220,12 +225,15 @@ export default async function getWebRTCData(): Promise<Record<string, unknown> |
 		const options = { offerToReceiveAudio: 1, offerToReceiveVideo: 1 }
 
 		const offer = await connection.createOffer(options as unknown as RTCOfferOptions)
+        console.log("getWebRTCData(): offer = ", offer)
 
 		connection.setLocalDescription(offer)
 		const { sdp } = offer || {}
 
 		const extensions = getExtensions(sdp)
 		const codecsSdp = getCapabilities(sdp)
+
+        console.log("getWebRTCData(): extensions = ", extensions, " codecsSdp = ", codecsSdp, " connection = ", connection)
 
 		let iceCandidate = ''
 		let foundation = ''
@@ -240,24 +248,34 @@ export default async function getWebRTCData(): Promise<Record<string, unknown> |
 					iceCandidate,
 				})
 			}
+	        console.log("getWebRTCData(): sdp = ", sdp)
+
 			return resolve(null)
 		}, 3000)
 
 		const computeCandidate = (event) => {
 			const { candidate, foundation: foundationProp } = event.candidate || {}
 
+   	        console.log("computeCandidate(): candidate = ", candidate, " foundation = ", foundation, " event = ", event)
+
 			if (!candidate) {
+	        console.log("getWebRTCData(): candidate = ", candidate)
 				return
 			}
 
 			if (!iceCandidate) {
 				iceCandidate = candidate
+
+    	        console.log("!!! computeCandidate(): candidate = ", candidate, " iceCandidate = ", iceCandidate)
+
+
 				foundation = (/^candidate:([\w]+)/.exec(candidate) || [])[1] || ''
 			}
 
 			const { sdp } = connection.localDescription || {}
 			const address = getIPAddress(sdp)
 			if (!address) {
+	        console.log("getWebRTCData(): address = ", address)
 				return
 			}
 
@@ -269,6 +287,9 @@ export default async function getWebRTCData(): Promise<Record<string, unknown> |
 			connection.removeEventListener('icecandidate', computeCandidate)
 			clearTimeout(giveUpOnIPAddress)
 			connection.close()
+
+    	        console.log("return computeCandidate(): iceCandidate = ", iceCandidate, " candidate = ", candidate)
+
 			return resolve({
 				codecsSdp,
 				extensions,
@@ -285,6 +306,8 @@ export default async function getWebRTCData(): Promise<Record<string, unknown> |
 }
 
 export function webrtcHTML(webRTC, mediaDevices) {
+    console.log("webrtcHTML(): webRTC = ", webRTC, " mediaDevices = ", mediaDevices)
+
 	if (!webRTC && !mediaDevices) {
 		return `
 			<div class="col-six">
