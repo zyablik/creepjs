@@ -701,16 +701,16 @@
           }
         }
 
-        ctx.font = '16px sans-serif';
-        const baseWidth = ctx.measureText(testString).width;
-
-        for (const font in results) {
-          if (!results[font]) {
-            ctx.font = `16px "${font}", sans-serif`;
-            const testWidth = ctx.measureText(testString).width;
-            results[font] |= Math.abs(testWidth - baseWidth) > 2;
-          }
-        }
+        // ctx.font = '16px sans-serif';
+        // const baseWidth = ctx.measureText(testString).width;
+        //
+        // for (const font in results) {
+        //   if (!results[font]) {
+        //     ctx.font = `16px "${font}", sans-serif`;
+        //     const testWidth = ctx.measureText(testString).width;
+        //     results[font] |= Math.abs(testWidth - baseWidth) > 2;
+        //   }
+        // }
 
         return results;
       }
