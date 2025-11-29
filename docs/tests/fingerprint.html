@@ -163,8 +163,10 @@
           })),
 
           audioCodecs: {},
-
           videoCodecs: {},
+
+          mediaSourceCodecs: [],
+          mediaRecoderCodecs: [],
 
           webrtc: {
             offer: {
@@ -353,12 +355,43 @@
           try { connection.close(); } catch(e){}
         });
 
+        // ----
 
-
+        fonts_promise = detectFonts_FontFace_local([...fontCandidates, ...extendedFontList, ...nothing_fonts])
+        fonts_promise.then((fonts) => {
+          fp.fonts =  Object.keys(fonts).filter(k => fonts[k]);
+        });
 
         // ----
 
-        await Promise.all([ice_promise]);
+        video_el = document.createElement('video')
+        audio_el = new Audio()
+
+        mimeCandidates.forEach((type) => {
+          audioPlayType = audio_el.canPlayType(type)
+          if (audioPlayType != '') {
+            fp.audioCodecs[type] = audioPlayType
+          }
+
+          videoPlayType = video_el.canPlayType(type)
+          if (videoPlayType != '') {
+            fp.videoCodecs[type] = videoPlayType
+          }
+
+          mediaSourceSupported = ('MediaSource' in window) && MediaSource.isTypeSupported(type);
+          if(mediaSourceSupported) {
+            fp.mediaSourceCodecs.push(type)
+          }
+
+          mediaRecorderSupported = ('MediaRecorder' in window) && MediaRecorder.isTypeSupported(type);
+          if(mediaRecorderSupported) {
+            fp.mediaRecoderCodecs.push(type);
+          }
+        })
+
+        // ----
+
+        await Promise.all([ice_promise, fonts_promise]);
 
         return fp;
       }
@@ -632,7 +665,7 @@
 
         str += "</table>"
 
-        results = await getFontFingerprint([...fontCandidates, ...extendedFontList, ...nothing_fonts])
+        results = await detectFonts_FontFace_local([...fontCandidates, ...extendedFontList, ...nothing_fonts])
 
 //        results = detectInstalledFonts([...fontCandidates, ...extendedFontList])
 
@@ -677,6 +710,64 @@
         a.remove()
         URL.revokeObjectURL(url)
       }
+
+
+      const mimeCandidates = [
+            // --- AUDIO ---
+            'audio/aac',
+            'audio/aacp',
+            'audio/3gpp',
+            'audio/3gpp2',
+            'audio/mpeg',                        // mp3
+            'audio/mp3',
+            'audio/mpegurl',
+            'audio/wav; codecs="1"',             // PCM
+            'audio/wav',
+            'audio/x-wav',
+            'audio/flac',
+            'audio/ogg; codecs="vorbis"',
+            'audio/ogg; codecs="opus"',
+            'audio/webm; codecs="opus"',
+            'audio/webm; codecs="vorbis"',
+            'audio/mp4',                         // m4a
+            'audio/x-m4a',
+            'audio/amr',
+            'audio/ac3',
+            'audio/eac3',
+
+            // --- VIDEO ---
+            'video/mp4; codecs="avc1.42E01E"',   // H.264 Baseline
+            'video/mp4; codecs="avc1.4D401E"',   // H.264 Main
+            'video/mp4; codecs="avc1.640028"',   // H.264 High
+            'video/mp4; codecs="mp4v.20.3"',     // MPEG-4 Part 2
+            'video/mp4; codecs="hvc1"',          // HEVC/H.265 (iOS/Safari only)
+            'video/mp4; codecs="hev1"',
+
+            'video/webm; codecs="vp8"',
+            'video/webm; codecs="vp9"',
+            'video/webm; codecs="vp09.00.10.08"', // VP9 Profile 0
+            'video/webm; codecs="av01.0.05M.08"', // AV1
+            'video/webm',
+
+            'video/ogg; codecs="theora"',
+            'video/x-matroska; codecs="avc1"',
+            'video/x-matroska; codecs="hevc"',
+            'video/x-matroska; codecs="opus"',
+
+            'video/quicktime',                    // MOV
+            'video/3gpp',
+            'video/3gpp2',
+            'video/x-msvideo',                    // AVI (обычно false)
+
+            // --- STREAMING / MSE / RECORDING ---
+            'video/mp2t',                         // MPEG-TS (HLS segments)
+
+            // --- MEDIARECORDER-friendly ---
+            'video/webm;codecs=h264',
+            'video/webm;codecs=vp8',
+            'video/webm;codecs=vp9',
+            'audio/webm;codecs=opus',
+        ].sort();
 
        const fontCandidates = [
           'Arial', 'Arial Black', 'Arial Narrow', 'Arial Unicode MS',
@@ -1352,7 +1443,7 @@ const extendedFontList = ["Abadi MT Condensed Light", "Academy Engraved LET", "A
     ];
 
 
-      async function getFontFingerprint(fontList) {
+      async function detectFonts_FontFace_local(fontList) {
 
         const results = {};
         const testString = "mmMwWLliI0O&1";
