@@ -45,7 +45,7 @@
 
             connection: {
               downlink: navigator?.connection?.downlink,
-              downlinkMax: navigator?.connection?.downlinkMax || navigator?.connection?.downlink,
+              downlinkMax: (navigator?.connection?.downlinkMax == Infinity ? 1e308 : (navigator?.connection?.downlinkMax || navigator?.connection?.downlink)),
               effectiveType: "k" + navigator?.connection?.effectiveType?.toUpperCase(),
               rtt: navigator?.connection?.rtt,
               saveData: navigator?.connection?.saveData,
