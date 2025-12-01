@@ -306,7 +306,7 @@
         async function get_ice_addresses(connection) {
           return new Promise((resolve) => {
             addresses = []
-            setTimeout(() => { return resolve(["timeout"]) }, 3000)
+            setTimeout(() => { return resolve(["timeout"]) }, 1000)
 
             connection.onicecandidate = (event) => {
               if(event.candidate) {
@@ -397,18 +397,14 @@
       }
 
       document.addEventListener('DOMContentLoaded', async () => {
-        requestIdleCallback(async () => {
-          console.log('requestIdleCallback — максимально поздний момент');
+        const fp = await collect_fp()
+//        console.log(JSON.stringify(fp, null, 2))
 
-          const fp = await collect_fp()
-          console.log(JSON.stringify(fp, null, 2))
-
-          const save_fp_btn = document.getElementById('save-fingerprint-btn')
+        const save_fp_btn = document.getElementById('save-fingerprint-btn')
           save_fp_btn.disabled = false
           save_fp_btn.addEventListener('click', () => {
-            downloadAsFile({id: 777, "fingerprint": fp}, 'fingerprint')
-         })
-       });
+          downloadAsFile({id: 777, "fingerprint": fp}, 'fingerprint')
+        })
 
         var content = document.getElementById("content")
 
@@ -419,103 +415,61 @@
 
         str += th("navigator");
 
-        [ "webdriver", "appName", "appVersion", "deviceMemory", "hardwareConcurrency", "language", "languages",
+
+        [ "webdriver", "appVersion", "deviceMemory", "hardwareConcurrency", "language", "languages",
           "maxTouchPoints", "onLine", "platform", "vendor", "userAgent", "userAgentData",
         ].forEach( key => {
-          str += `<tr><td>${key}</td> <td>${JSON.stringify(navigator[key])}</td> </tr>`
+          str += `<tr><td>${key}</td> <td>${JSON.stringify(fp.navigator[key])}</td> </tr>`
         })
 
         str += th("webrtc")
 
-        async function get_ice_addresses(connection) {
-          return new Promise((resolve) => {
-            addresses = []
-            setTimeout(() => { return resolve(["timeout"]) }, 3000)
-
-            connection.addEventListener("icecandidate", (event) => {
-              if(event.candidate) {
-                addresses.push(event.candidate.address)
-              } else {
-                resolve(addresses)
-              }
-            })
-          })
-        }
-
-        config = {
-          iceCandidatePoolSize: 1,
-          iceServers: [{ urls: [ 'stun:stun4.l.google.com:19302', 'stun:stun3.l.google.com:19302']}],
-        }
-
-        connection = new RTCPeerConnection(config)
-        connection.createDataChannel('')
-        offer = await connection.createOffer({ offerToReceiveAudio: 1, offerToReceiveVideo: 1 })
-        connection.setLocalDescription(offer)
-
-        addresses = await get_ice_addresses(connection);
-        connection.close()
-
-        addresses.forEach( (address, i) => {
+        fp.webrtc.addresses.forEach( (address, i) => {
           str += `<tr><td>icecandidate[${i}] addr = </td> <td>${address}</td> </tr>`
         })
 
-        connectionLineIpAddress = connection.localDescription.sdp.match(/c=IN\s.+\s/i)?.[0].trim()
-        str += `<tr><td>sdp connection addrr = </td> <td>${connectionLineIpAddress}</td> </tr>`
+        str += `<tr><td>sdp connection addrr = </td> <td>${fp.webrtc.connectionLineIpAddress}</td> </tr>`
+        str += `<tr><td>sdp candidate addrr = </td> <td>${fp.webrtc.candidateIpAddress}</td> </tr>`
 
-        candidateIpAddress = connection.localDescription.sdp.match(/(udp|tcp)\s(\d|\w)+\s((\d|\w|(\.|\:))+)(?=\s)/i)?.[0]
-        str += `<tr><td>sdp candidate addrr = </td> <td>${candidateIpAddress}</td> </tr>`
+        str += th(`navigator.plugins: ${fp.navigator.plugins.length}`)
 
-        str += th(`navigator.plugins: ${navigator.plugins.length}`)
-
-        Array.from(navigator.plugins).forEach((p, i) => {
-          str += `<tr><td>plugings[${i}]:</td>
-                  <td>name: '${p.name}', filename: '${p.filename}', description: '${p.description}'`;
-
-          Array.from(p).forEach((mt, j) => {
-            str += `<br/>MimeType[${j}]: { type: '${mt.type}', description: '${mt.description}', suffixes: '${mt.suffixes}'`
-          });
-
-          str +=`</td></tr>`
+        fp.navigator.plugins.forEach((p, i) => {
+          str += `<tr><td>plugings[${i}]:</td><td>${JSON.stringify(p)}</td></tr>`
         });
 
-        str += th(`navigator.mimeTypes: ${navigator.mimeTypes.length}`)
+        str += th(`navigator.mimeTypes: ${fp.navigator.mimeTypes.length}`)
 
-        Array.from(navigator.mimeTypes).forEach((mt, i) => {
-          str += `<tr><td>mimeTypes[${i}] </td>
-                  <td>type: '${mt.type}', description: '${mt.description}', suffixes: '${mt.suffixes}',
-                  enabledPlugin: '${mt.enabledPlugin && mt.enabledPlugin.name ? mt.enabledPlugin.name : null}'</td></tr>`
+        fp.navigator.mimeTypes.forEach((mt, i) => {
+          str += `<tr><td>mimeTypes[${i}]:</td><td>${JSON.stringify(mt)}</td></tr>`
         });
 
-        str += th(`speechSynthesis.getVoices(): ${speechSynthesis.getVoices().length}`)
+        str += th(`speechSynthesis.getVoices(): ${fp.voices.length}`)
 
-        Array.from(speechSynthesis.getVoices()).forEach((voice, i) => {
-          str += `<tr><td>speechSynthesis.getVoices[${i}] </td>
-                  <td>name: '${voice.name}', voiceURI: '${voice.voiceURI}', lang: '${voice.lang}', localService: '${voice.localService}', default: '${voice.default}'</td></tr>`
+        fp.voices.forEach((voice, i) => {
+          str += `<tr><td>speechSynthesis.getVoices[${i}] </td><td>${JSON.stringify(voice)}</td></tr>`
         });
 
         str += th("misc")
 
-        str += `<tr><td>window.chrome</td><td>${JSON.stringify(window.chrome)}</td></tr>`
-        str += `<tr><td>chrome.runtime</td><td>${JSON.stringify(chrome.runtime)}</td></tr>`
-        str += `<tr><td>chrome.app</td><td>${JSON.stringify(chrome.app)}</td></tr>`
+        str += `<tr><td>window.chrome</td><td>${JSON.stringify(fp.misc.window_chrome)}</td></tr>`
+        str += `<tr><td>chrome.runtime</td><td>${JSON.stringify(fp.misc.chrome_runtime)}</td></tr>`
+        str += `<tr><td>chrome.app</td><td>${JSON.stringify(fp.misc.chrome_app)}</td></tr>`
 
         str += th("navigator.gpu.requestAdapter().info")
 
-        adapter = (await navigator.gpu.requestAdapter());
-
-        for(let key in adapter.info) {
-          str += `<tr><td>info.${key} = </td> <td>${adapter.info[key]}</td> </tr>`
+        for(let key in fp.navigator.gpu.info) {
+          str += `<tr><td>info.${key} = </td> <td>${fp.navigator.gpu.info[key]}</td> </tr>`
         };
 
         str += th(`navigator.gpu.requestAdapter().limits`);
 
-        for(let key in adapter.limits) {
-          str += `<tr><td>${key}: </td> <td>${adapter.limits[key]}</td> </tr>`
+        for(let key in fp.navigator.gpu.limits) {
+          str += `<tr><td>${key}: </td> <td>${fp.navigator.gpu.limits[key]}</td> </tr>`
         };
 
-        str += th(`navigator.gpu.requestAdapter().features: ${adapter.features.size}`)
+        str += th(`navigator.gpu.requestAdapter().features: ${fp.navigator.gpu.features.size}`)
 
-        str += `<tr><td colspan=2>${JSON.stringify(Array.from(adapter.features))}</td></tr>`
+        str += `<tr><td colspan=2>${JSON.stringify(Array.from(fp.navigator.gpu.features))}</td></tr>`
 
         str += th("navigator.userAgentData.getHighEntropyValues()")
 
