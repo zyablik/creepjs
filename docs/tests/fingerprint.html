@@ -4,14 +4,6 @@
   <head>
     <script type="text/javascript">
 
-      const hashMini = (x) => {
-        const json = `${JSON.stringify(x)}`
-        const hash = json.split('').reduce((hash, char, i) => {
-          return Math.imul(31, hash) + json.charCodeAt(i) | 0
-        }, 0x811c9dc5)
-        return ('0000000' + (hash >>> 0).toString(16)).substr(-8)
-      }
-
       async function collect_fp() {
         battery = (await navigator?.getBattery?.());
 
@@ -64,7 +56,7 @@
 
             bluetooth: {
               bluetooth: String(navigator.bluetooth),
-              availability: (await navigator.bluetooth?.getAvail1ability?.())
+              availability: (await navigator.bluetooth?.getAvailability?.())
             },
 
             storage: {
@@ -154,13 +146,7 @@
             precisions: {},
           },
 
-          voices: Array.from(speechSynthesis?.getVoices() ||[]).map((voice) => ({
-            name: voice.name,
-            voiceURI: voice.voiceURI,
-            lang: voice.lang,
-            localService: voice.localService,
-            default: voice.default
-          })),
+          voices: [],
 
           audioCodecs: {},
           videoCodecs: {},
@@ -301,6 +287,20 @@
           });
         });
 
+        // speechSynthesis
+        if(speechSynthesis) {
+          speechSynthesis.onvoiceschanged = () => {
+          speechSynthesis.onvoiceschanged = null
+            fp.voices = speechSynthesis.getVoices().map((voice) => ({
+              name: voice.name,
+              voiceURI: voice.voiceURI,
+              lang: voice.lang,
+              localService: voice.localService,
+              default: voice.default
+            }))
+          };
+        }
+
         // webrtc
 
         async function get_ice_addresses(connection) {
@@ -357,6 +357,35 @@
 
         // ----
 
+
+        const detectFonts_FontFace_local = async function (fontList) {
+          const results = {};
+          const testString = "mmMwWLliI0O&1";
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+
+          for (const font of fontList) {
+            try {
+              const fontFace = new FontFace(font, `local("${font}")`);
+              await fontFace.load();
+              results[font] = fontFace.status === 'loaded';
+            } catch {
+              results[font] = false;
+            }
+          }
+          // ctx.font = '16px sans-serif';
+          // const baseWidth = ctx.measureText(testString).width;
+          //
+          // for (const font in results) {
+          //   if (!results[font]) {
+          //     ctx.font = `16px "${font}", sans-serif`;
+          //     const testWidth = ctx.measureText(testString).width;
+          //     results[font] |= Math.abs(testWidth - baseWidth) > 2;
+          //   }
+          // }
+          return results;
+        }
+
         fonts_promise = detectFonts_FontFace_local([...fontCandidates, ...extendedFontList, ...nothing_fonts])
         fonts_promise.then((fonts) => {
           fp.fonts =  Object.keys(fonts).filter(k => fonts[k]);
@@ -396,282 +425,9 @@
         return fp;
       }
 
-      document.addEventListener('DOMContentLoaded', async () => {
-        const fp = await collect_fp()
-//        console.log(JSON.stringify(fp, null, 2))
-
-        const save_fp_btn = document.getElementById('save-fingerprint-btn')
-          save_fp_btn.disabled = false
-          save_fp_btn.addEventListener('click', () => {
-          downloadAsFile({id: 777, "fingerprint": fp}, 'fingerprint')
-        })
-
-        var content = document.getElementById("content")
-
-        const separator = "<tr><td style='border-top: 10px solid transparent' colspan=2></td></tr>"
-        th = function(header) { content.innerHTML = header; return `${separator}<tr><th colspan=2>${header}</th></tr>` }
-
-        str = "<table>"
-
-        str += th("navigator");
-
-
-        [ "webdriver", "appVersion", "deviceMemory", "hardwareConcurrency", "language", "languages",
-          "maxTouchPoints", "onLine", "platform", "vendor", "userAgent", "userAgentData",
-        ].forEach( key => {
-          str += `<tr><td>${key}</td> <td>${JSON.stringify(fp.navigator[key])}</td> </tr>`
-        })
-
-        str += th("webrtc")
-
-        fp.webrtc.addresses.forEach( (address, i) => {
-          str += `<tr><td>icecandidate[${i}] addr = </td> <td>${address}</td> </tr>`
-        })
-
-        str += `<tr><td>sdp connection addrr = </td> <td>${fp.webrtc.connectionLineIpAddress}</td> </tr>`
-        str += `<tr><td>sdp candidate addrr = </td> <td>${fp.webrtc.candidateIpAddress}</td> </tr>`
-
-        str += th(`navigator.plugins: ${fp.navigator.plugins.length}`)
-
-        fp.navigator.plugins.forEach((p, i) => {
-          str += `<tr><td>plugings[${i}]:</td><td>${JSON.stringify(p)}</td></tr>`
-        });
-
-        str += th(`navigator.mimeTypes: ${fp.navigator.mimeTypes.length}`)
-
-        fp.navigator.mimeTypes.forEach((mt, i) => {
-          str += `<tr><td>mimeTypes[${i}]:</td><td>${JSON.stringify(mt)}</td></tr>`
-        });
-
-        str += th(`speechSynthesis.getVoices(): ${fp.voices.length}`)
-
-        fp.voices.forEach((voice, i) => {
-          str += `<tr><td>speechSynthesis.getVoices[${i}] </td><td>${JSON.stringify(voice)}</td></tr>`
-        });
-
-        str += th("misc")
-
-        str += `<tr><td>window.chrome</td><td>${JSON.stringify(fp.misc.window_chrome)}</td></tr>`
-        str += `<tr><td>chrome.runtime</td><td>${JSON.stringify(fp.misc.chrome_runtime)}</td></tr>`
-        str += `<tr><td>chrome.app</td><td>${JSON.stringify(fp.misc.chrome_app)}</td></tr>`
-
-        str += th("navigator.gpu.requestAdapter().info")
-
-        for(let key in fp.navigator.gpu.info) {
-          str += `<tr><td>info.${key} = </td> <td>${fp.navigator.gpu.info[key]}</td> </tr>`
-        };
-
-        str += th(`navigator.gpu.requestAdapter().limits`);
-
-        for(let key in fp.navigator.gpu.limits) {
-          str += `<tr><td>${key}: </td> <td>${fp.navigator.gpu.limits[key]}</td> </tr>`
-        };
-
-        str += th(`navigator.gpu.requestAdapter().features: ${fp.navigator.gpu.features.size}`)
-
-        str += `<tr><td colspan=2>${JSON.stringify(Array.from(fp.navigator.gpu.features))}</td></tr>`
-
-        str += th("navigator.userAgentData.getHighEntropyValues()")
-
-        var high_entr_fields = ['architecture', 'bitness', 'formFactors', 'fullVersionList', 'model', 'platformVersion', 'uaFullVersion', 'wow64' ]
-        high_entr_values = await navigator.userAgentData.getHighEntropyValues(high_entr_fields);
-        high_entr_fields.forEach(field => {
-          str += `<tr><td>userAgentData.${field} = </td> <td>${JSON.stringify(high_entr_values[field])}</td></tr>`
-        })
-
-        str += th("navigator.getBattery()")
-
-        battery = await navigator.getBattery();
-        str += `<tr><td>charging: </td><td>${battery.charging}</td></tr>
-                <tr><td>level: </td><td>${battery.level}</td></tr>
-                <tr><td>chargingTime: </td><td>${battery.chargingTime}</td></tr>
-                <tr><td>dischargingTime: </td><td>${battery.dischargingTime}</td></tr>`
-
-        str += th("navigator.storage")
-
-        function getTemporaryStorageUsage() {
-          return new Promise((resolve, reject) => {
-            navigator.webkitTemporaryStorage.queryUsageAndQuota((usage, quota) => {
-              resolve({ usage: usage, quota: quota });
-            })
-          })
-        }
-
-        const { usage, quota } = await getTemporaryStorageUsage();
-        str += `<tr><td>webkitTemporaryStorage.queryUsageAndQuota.quota: </td><td>${quota}</td></tr>
-                <tr><td>webkitTemporaryStorage.queryUsageAndQuota.usage: </td><td>${usage}</td></tr>`
-
-        str += `<tr><td>storage.estimate().quota: </td><td>${(await navigator.storage.estimate()).quota}</td></tr>
-                <tr><td>storage.estimate().usage: </td><td>${(await navigator.storage.estimate()).usage}</td></tr>`
-
-        str += th("navigator.bluetooth")
-
-        str += `<tr><td>navigator.bluetooth: </td><td>${String(navigator.bluetooth)}</td></tr>`
-        str += `<tr><td>navigator.bluetooth.getAvailability(): </td><td>${navigator.bluetooth ? (await navigator.bluetooth.getAvailability()) : false }</td></tr>`
-
-        media_devices = await navigator.mediaDevices.enumerateDevices();
-        str += th(`navigator.mediaDevices.enumerateDevices(): ${media_devices.length}`)
-
-        media_devices.forEach((device, i) => {
-          str += `<tr><td>mediaDevices[${i}] = </td><td>deviceId: '${device.deviceId}', groupId: '${device.groupId}', kind: '${device.kind}', label: '${device.label}'</td></tr>`
-        });
-
-        str += th("performance.memory")
-
-        str += `<tr><td>performance.memory.jsHeapSizeLimit: </td><td>${performance.memory.jsHeapSizeLimit}</td></tr>
-                <tr><td>performance.memory.totalJSHeapSize: </td><td>${performance.memory.totalJSHeapSize}</td></tr>
-                <tr><td>performance.memory.usedJSHeapSize: </td><td>${performance.memory.usedJSHeapSize}</td></tr>`
-
-        str += th(`window`)
-
-        hasTouch = () => {
-          try {
-            return 'ontouchstart' in window && !!document.createEvent('TouchEvent')
-          } catch (err) {
-            return false
-          }
-        }
-
-        str += `<tr><td> window.ontouchstart && !!document.createEvent('TouchEvent'): </td><td>${hasTouch()}</td></tr>`;
-
-        str += separator;
-
-        ["screenLeft", "screenTop", "innerWidth", "innerHeight", "outerWidth", "outerHeight", "devicePixelRatio"].forEach(key => {
-          str += `<tr><td>window.${key}: </td><td>${window[key]}</td></tr>`
-        });
-
-        str += th("screen");
-
-        ["availLeft", "availTop", "width", "height", "availWidth", "availHeight", "colorDepth", "pixelDepth", "isExtended"].forEach(key => {
-          str += `<tr><td>screen.${key}: </td><td>${JSON.stringify(screen[key])}</td></tr>`
-        });
-        str += `<tr><td>screen.orientation.type: </td><td>${screen.orientation.type}</td></tr>`
-        str += `<tr><td>screen.orientation.angle: </td><td>${screen.orientation.angle}</td></tr>`
-
-        // str += th("navigator.geolocation");
-        //
-        // function getPosition(options) {
-        //   return new Promise((resolve, reject) =>
-        //     navigator.geolocation.getCurrentPosition(resolve, reject, options));}
-        //
-        // try {
-        //   location = await getPosition({ maximumAge: 10000, timeout: 1000, enableHighAccuracy: true });
-        //
-        //   str += `
-        //       <tr><td>latitude</td><td>${location.coords.latitude}</td></tr>
-        //       <tr><td>longitude</td><td>${location.coords.longitude}</td></tr>
-        //       <tr><td>altitude</td><td>${location.coords.altitude}</td></tr>
-        //       <tr><td>accuracy</td><td>${location.coords.accuracy}</td></tr>
-        //       <tr><td>altitudeAccuracy</td><td>${location.coords.altitudeAccuracy}</td></tr>
-        //       <tr><td>heading</td><td>${location.coords.heading}</td></tr>
-        //       <tr><td>speed</td><td>${location.coords.speed}</td></tr>`;
-        // } catch (err) {
-        //   console.error('Geolocation error:', err.code, err.message);
-        //   str += `<tr><td>navigator.geolocation.getCurrentPosition()</td><td>error: ${err.code} ${err.message}</td></tr>`
-        // }
-
-        str += th("webgl");
-
-        canvas = document.getElementById("canvas");
-        gl1_context = canvas.getContext("webgl");
-
-        renderer_info = gl1_context.getExtension("WEBGL_debug_renderer_info");
-
-        str += `<tr><td>UNMASKED_VENDOR_WEBGL = </td><td>${gl1_context.getParameter(renderer_info.UNMASKED_VENDOR_WEBGL)}</td></tr>
-                <tr><td>UNMASKED_RENDERER_WEBGL = </td><td>${gl1_context.getParameter(renderer_info.UNMASKED_RENDERER_WEBGL)}</td></tr>`
-
-        str += th("webgl1 extensions");
-
-        exts = gl1_context.getSupportedExtensions()
-        str += `<tr><td> gl.getSupportedExtensions: ${exts.length} </td><td>${exts.join(', ')}</td></tr>`
-
-
-        str += th("mime types");
-
-        video = document.createElement('video');
-        str += `<tr><td>video.canPlayType('video/not-supported') = </td><td>'${video.canPlayType('video/not-supported')}'</td></tr>
-                <tr><td>video.canPlayType('video/h264') = </td><td>'${video.canPlayType('video/h264')}'</td></tr>
-                <tr><td>video.canPlayType('video/webm') = </td><td>'${video.canPlayType('video/webm')}'</td></tr>`
-
-        str += separator
-
-        audio = new Audio();
-        str += `<tr><td>audio.canPlayType('audio/not-supported') = </td><td>'${audio.canPlayType('audio/not-supported')}'</td></tr>
-                <tr><td>audio.canPlayType('audio/ogg') = </td><td>'${audio.canPlayType('audio/ogg')}'</td></tr>
-                <tr><td>audio.canPlayType('audio/m4a') = </td><td>'${audio.canPlayType('audio/m4a')}'</td></tr>`
-
-        str += th("intl");
-
-        str += `<tr><td>Intl.DateTimeFormat().resolvedOptions().timeZone: </td><td>${Intl.DateTimeFormat().resolvedOptions().timeZone}</td></tr>
-                <tr><td>new Date().getTimezoneOffset() = </td><td>${(new Date().getTimezoneOffset())}</td></tr>
-                <tr>
-                  <td>(1).toLocaleString(undefined, {style: 'currency'}): </td>
-                  <td>${(1).toLocaleString(undefined, { style: 'currency', currency: 'USD', currencyDisplay: 'name'})}</td>
-                </tr>
-                <tr>
-                  <td>(1).toLocaleString(navigator.language, {style: 'currency'}): </td>
-                  <td>${(1).toLocaleString(navigator.language, { style: 'currency', currency: 'USD', currencyDisplay: 'name'})}</td>
-                </tr>
-                <tr>
-                  <td>(new Intl.Collator).resolvedOptions().locale: </td><td>${(new Intl.Collator).resolvedOptions().locale}</td>
-                </tr>
-                `
-        str += th("canvas");
-
-        str += "<tr><td><canvas id=canvas_1 width=200 height=50></canvas></td><td id=hash_1></td></tr>"
-        str += "<tr><td><canvas id=canvas_2 width=200 height=50></canvas></td><td id=hash_2></td></tr>"
-
-        str += "</table>"
-
-        results = await detectFonts_FontFace_local([...fontCandidates, ...extendedFontList, ...nothing_fonts])
-
-//        results = detectInstalledFonts([...fontCandidates, ...extendedFontList])
-
-        console.log("Font Availability:", JSON.stringify(results));
-
-        str += "<table border=1><tr><th>Font</th><th>Available</th></tr>";
-        for (const font in results) {
-          str +=
-            `<tr>
-              <td style="font-family:'${font}'">${font}</td>
-              <td style="color:${results[font] ? 'green' : 'red'}"> ${results[font] ? "yes" : "no" }</td>
-            </tr>`;
-        }
-        str += '</table>';
-        content.innerHTML = str
-
-        fingerprint1 = generateCanvasFingerprint(document.getElementById("canvas_1"));
-        prev_fingerprint1_hash = localStorage.getItem("canvasFingerprint1");
-        localStorage.setItem("canvasFingerprint1", fingerprint1.hash);
-        // console.log('Canvas Fingerprint Hash:', fingerprint1.hash);
-
-        fingerprint2 = generateCanvasFingerprint(document.getElementById("canvas_2"));
-        prev_fingerprint2_hash = localStorage.getItem("canvasFingerprint2");
-        localStorage.setItem("canvasFingerprint2", fingerprint2.hash);
-        // console.log('Canvas Fingerprint Hash:', fingerprint2.hash);
-
-
-        document.getElementById("hash_1").innerHTML = `current hash = ${fingerprint1.hash} prev hash = ${prev_fingerprint1_hash}`
-        document.getElementById("hash_2").innerHTML = `current hash = ${fingerprint2.hash} prev hash = ${prev_fingerprint2_hash}`
-
-      });
-
-      function downloadAsFile(data, name) {
-        const json = JSON.stringify(data, null, 2)
-        const blob = new Blob([json], { type: 'application/json;charset=utf-8' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${name}.json`
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-        URL.revokeObjectURL(url)
-      }
-
-
       const mimeCandidates = [
             // --- AUDIO ---
+            'audio/non-existent',
             'audio/aac',
             'audio/aacp',
             'audio/3gpp',
@@ -694,6 +450,7 @@
             'audio/eac3',
 
             // --- VIDEO ---
+            'video/non-existent',
             'video/mp4; codecs="avc1.42E01E"',   // H.264 Baseline
             'video/mp4; codecs="avc1.4D401E"',   // H.264 Main
             'video/mp4; codecs="avc1.640028"',   // H.264 High
@@ -1401,88 +1158,307 @@ const extendedFontList = ["Abadi MT Condensed Light", "Academy Engraved LET", "A
     ];
 
 
-      async function detectFonts_FontFace_local(fontList) {
 
-        const results = {};
-        const testString = "mmMwWLliI0O&1";
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
 
-        for (const font of fontList) {
-          try {
-            const fontFace = new FontFace(font, `local("${font}")`);
-            await fontFace.load();
-            results[font] = fontFace.status === 'loaded';
-          } catch {
-            results[font] = false;
-          }
+
+
+
+      document.addEventListener('DOMContentLoaded', async () => {
+        const fp = await collect_fp()
+//        console.log(JSON.stringify(fp, null, 2))
+
+        const downloadAsFile = function(data, name) {
+          const json = JSON.stringify(data, null, 2)
+          const blob = new Blob([json], { type: 'application/json;charset=utf-8' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `${name}.json`
+          document.body.appendChild(a)
+          a.click()
+          a.remove()
+          URL.revokeObjectURL(url)
         }
 
-        // ctx.font = '16px sans-serif';
-        // const baseWidth = ctx.measureText(testString).width;
+        const save_fp_btn = document.getElementById('save-fingerprint-btn')
+          save_fp_btn.disabled = false
+          save_fp_btn.addEventListener('click', () => {
+            downloadAsFile({id: 777, "fingerprint": fp}, 'fingerprint')
+          })
+
+        var content = document.getElementById("content")
+
+        const separator = "<tr><td style='border-top: 10px solid transparent' colspan=2></td></tr>"
+        th = function(header) { content.innerHTML = header; return `${separator}<tr><th colspan=2>${header}</th></tr>` }
+
+        str = "<table>"
+
+        str += th("navigator");
+
+        [ "webdriver", "appVersion", "deviceMemory", "hardwareConcurrency", "language", "languages",
+          "maxTouchPoints", "onLine", "platform", "vendor", "userAgent"
+        ].forEach( key => {
+          str += `<tr><td>${key}</td> <td>${JSON.stringify(fp.navigator[key])}</td> </tr>`
+        })
+
+        str += th("navigator.userAgentData.getHighEntropyValues()")
+
+
+        for(field in fp.navigator.userAgentData) {
+          str += `<tr><td>userAgentData.${field} = </td> <td>${JSON.stringify(fp.navigator.userAgentData[field])}</td></tr>`
+        }
+
+        str += th("screen");
+
+        for(field in fp.screen) {
+          str += `<tr><td>screen.${field} = </td> <td>${JSON.stringify(fp.screen[field])}</td></tr>`
+        }
+
+
+        str += th("webrtc")
+
+        fp.webrtc.addresses.forEach( (address, i) => {
+          str += `<tr><td>icecandidate[${i}] addr = </td> <td>${address}</td> </tr>`
+        })
+
+        str += `<tr><td>sdp connection addrr = </td> <td>${fp.webrtc.connectionLineIpAddress}</td> </tr>`
+        str += `<tr><td>sdp candidate addrr = </td> <td>${fp.webrtc.candidateIpAddress}</td> </tr>`
+
+        str += th(`navigator.plugins: ${fp.navigator.plugins.length}`)
+
+        fp.navigator.plugins.forEach((p, i) => {
+          str += `<tr><td>plugings[${i}]:</td><td>${JSON.stringify(p)}</td></tr>`
+        });
+
+        str += th(`navigator.mimeTypes: ${fp.navigator.mimeTypes.length}`)
+
+        fp.navigator.mimeTypes.forEach((mt, i) => {
+          str += `<tr><td>mimeTypes[${i}]:</td><td>${JSON.stringify(mt)}</td></tr>`
+        });
+
+        str += th(`speechSynthesis.getVoices(): ${fp.voices.length}`)
+
+        fp.voices.forEach((voice, i) => {
+          str += `<tr><td>speechSynthesis.getVoices[${i}] </td><td>${JSON.stringify(voice)}</td></tr>`
+        });
+
+        str += th("misc")
+
+        str += `<tr><td>window.chrome</td><td>${JSON.stringify(fp.misc.window_chrome)}</td></tr>`
+        str += `<tr><td>chrome.runtime</td><td>${JSON.stringify(fp.misc.chrome_runtime)}</td></tr>`
+        str += `<tr><td>chrome.app</td><td>${JSON.stringify(fp.misc.chrome_app)}</td></tr>`
+        str += `<tr><td>window.ontouchstart</td><td>${JSON.stringify(fp.misc.window_ontouchstart)}</td></tr>`
+        str += `<tr><td>window.touch_event</td><td>${JSON.stringify(fp.misc.touch_event)}</td></tr>`
+        str += `<tr><td>window.keys size = </td><td>${fp.misc.window_keys.length}</td></tr>`
+
+        str += th("navigator.gpu.requestAdapter().info")
+
+        for(let key in fp.navigator.gpu.info) {
+          str += `<tr><td>info.${key} = </td> <td>${fp.navigator.gpu.info[key]}</td> </tr>`
+        };
+
+        str += th(`navigator.gpu.requestAdapter().limits`);
+
+        for(let key in fp.navigator.gpu.limits) {
+          str += `<tr><td>${key}: </td> <td>${fp.navigator.gpu.limits[key]}</td> </tr>`
+        };
+
+        str += th(`navigator.gpu.requestAdapter().features: ${fp.navigator.gpu.features.length}`)
+
+        str += `<tr><td colspan=2>${JSON.stringify(fp.navigator.gpu.features)}</td></tr>`
+
+        str += th("navigator.getBattery()")
+
+        for(let key in fp.navigator.battery) {
+          str += `<tr><td>${key} = </td> <td>${JSON.stringify(fp.navigator.battery[key])}</td> </tr>`
+        };
+
+        str += th("navigator.storage")
+
+        str += `<tr><td>storage.estimate().quota: </td><td>${fp.navigator.storage.quota}</td></tr>
+                <tr><td>storage.estimate().usage: </td><td>${fp.navigator.storage.usage}</td></tr>`
+
+        str += th("navigator.bluetooth")
+
+        for(let key in fp.navigator.bluetooth) {
+          str += `<tr><td>${key} = </td> <td>${JSON.stringify(fp.navigator.bluetooth[key])}</td> </tr>`
+        };
+
+        str += th(`navigator.mediaDevices.enumerateDevices(): ${fp.navigator.mediaDevices.length}`)
+
+        fp.navigator.mediaDevices.forEach((device, i) => {
+          str += `<tr><td>mediaDevices[${i}] = </td><td>${JSON.stringify(device)}</td></tr>`
+        });
+
+        str += th("performance.memory")
+
+        for(let key in fp.performance.memory) {
+          str += `<tr><td>${key} = </td> <td>${JSON.stringify(fp.performance.memory[key])}</td> </tr>`
+        };
+
+
+        // str += th("navigator.geolocation");
         //
-        // for (const font in results) {
-        //   if (!results[font]) {
-        //     ctx.font = `16px "${font}", sans-serif`;
-        //     const testWidth = ctx.measureText(testString).width;
-        //     results[font] |= Math.abs(testWidth - baseWidth) > 2;
-        //   }
+        // function getPosition(options) {
+        //   return new Promise((resolve, reject) =>
+        //     navigator.geolocation.getCurrentPosition(resolve, reject, options));}
+        //
+        // try {
+        //   location = await getPosition({ maximumAge: 10000, timeout: 1000, enableHighAccuracy: true });
+        //
+        //   str += `
+        //       <tr><td>latitude</td><td>${location.coords.latitude}</td></tr>
+        //       <tr><td>longitude</td><td>${location.coords.longitude}</td></tr>
+        //       <tr><td>altitude</td><td>${location.coords.altitude}</td></tr>
+        //       <tr><td>accuracy</td><td>${location.coords.accuracy}</td></tr>
+        //       <tr><td>altitudeAccuracy</td><td>${location.coords.altitudeAccuracy}</td></tr>
+        //       <tr><td>heading</td><td>${location.coords.heading}</td></tr>
+        //       <tr><td>speed</td><td>${location.coords.speed}</td></tr>`;
+        // } catch (err) {
+        //   console.error('Geolocation error:', err.code, err.message);
+        //   str += `<tr><td>navigator.geolocation.getCurrentPosition()</td><td>error: ${err.code} ${err.message}</td></tr>`
         // }
 
-        return results;
+        str += th("webgl parameters");
+
+        for(field in fp.webgl.parameters) {
+          str += `<tr><td>${field} = </td> <td>${JSON.stringify(fp.webgl.parameters[field])}</td></tr>`
+        }
+
+        str += th("webgl precisions");
+
+        for(field in fp.webgl.precisions) {
+          str += `<tr><td>${field} = </td> <td>${JSON.stringify(fp.webgl.precisions[field])}</td></tr>`
+        }
+
+        str += th("webgl1 extensions");
+        str += `<tr><td> gl1.getSupportedExtensions: ${fp.webgl.extensions_gl1.length} </td><td>${fp.webgl.extensions_gl1.join(', ')}</td></tr>`
+
+        str += th("webgl2 extensions");
+        str += `<tr><td> gl2.getSupportedExtensions: ${fp.webgl.extensions_gl2.length} </td><td>${fp.webgl.extensions_gl2.join(', ')}</td></tr>`
+
+        str += th("mime types");
+
+        str += th("audio.canPlayType()");
+        for(field in fp.audioCodecs) {
+          str += `<tr><td>${field} = </td> <td>${JSON.stringify(fp.audioCodecs[field])}</td></tr>`
+        }
+
+        str += th("video.canPlayType()");
+        for(field in fp.videoCodecs) {
+          str += `<tr><td>${field} = </td> <td>${JSON.stringify(fp.videoCodecs[field])}</td></tr>`
+        }
+
+        str += th("MediaSource.isTypeSupported()");
+        str += `<tr><td> mediaSourceCodecs: ${fp.mediaSourceCodecs.length} </td><td>${fp.mediaSourceCodecs.join(', ')}</td></tr>`
+
+        str += th("MediaRecorder.isTypeSupported()");
+        str += `<tr><td> mediaSourceCodecs: ${fp.mediaRecoderCodecs.length} </td><td>${fp.mediaRecoderCodecs.join(', ')}</td></tr>`
+
+        str += th("intl");
+
+        str += `<tr><td>Intl.DateTimeFormat().resolvedOptions().timeZone: </td><td>${fp.intl.timeZone}</td></tr>
+                <tr><td>new Date().getTimezoneOffset() = </td><td>${fp.intl.offset}</td></tr>
+                <tr><td>(1).toLocaleString(undefined, {style: 'currency'}): </td><td>${fp.intl.toLocaleString_undefined}</td></tr>
+                <tr><td>(1).toLocaleString(navigator.language, {style: 'currency'}): </td><td>${fp.intl.toLocaleString_lang}</td></tr>
+                <tr><td>(new Intl.Collator).resolvedOptions().locale: </td><td>${fp.intl.locale}</td></tr>
+                `
+        str += th("canvas");
+
+        str += "<tr><td><canvas id=canvas_1 width=200 height=50></canvas></td><td id=hash_1></td></tr>"
+        str += "<tr><td><canvas id=canvas_2 width=200 height=50></canvas></td><td id=hash_2></td></tr>"
+
+        str += "</table>"
+
+        str += "<table border=1><tr><th>Font</th><th>Available</th></tr>";
+        const found_fonts_set = new Set(fp.fonts)
+        const all_fonts_set = new Set([...fontCandidates, ...extendedFontList, ...nothing_fonts])
+
+        for (const font of all_fonts_set) {
+          str +=
+            `<tr>
+              <td style="font-family:'${font}'">${font}</td>
+              <td style="color:${found_fonts_set.has(font) ? 'green' : 'red'}"> ${found_fonts_set.has(font) ? "yes" : "no" }</td>
+            </tr>`;
+        }
+        str += '</table>';
+
+        content.innerHTML = str
+
+        fingerprint1 = generateCanvasFingerprint(document.getElementById("canvas_1"));
+        prev_fingerprint1_hash = localStorage.getItem("canvasFingerprint1");
+        localStorage.setItem("canvasFingerprint1", fingerprint1.hash);
+        // console.log('Canvas Fingerprint Hash:', fingerprint1.hash);
+
+        fingerprint2 = generateCanvasFingerprint(document.getElementById("canvas_2"));
+        prev_fingerprint2_hash = localStorage.getItem("canvasFingerprint2");
+        localStorage.setItem("canvasFingerprint2", fingerprint2.hash);
+        // console.log('Canvas Fingerprint Hash:', fingerprint2.hash);
+
+
+        document.getElementById("hash_1").innerHTML = `current hash = ${fingerprint1.hash} prev hash = ${prev_fingerprint1_hash}`
+        document.getElementById("hash_2").innerHTML = `current hash = ${fingerprint2.hash} prev hash = ${prev_fingerprint2_hash}`
+
+      });
+
+      function detectInstalledFonts(fontNames) {
+        const testString = 'mmmmmmmmmwwwwwww0123456789абвгдABCD'; // чтобы ширина была чувствительной
+        const testSize = '72px'; // побольше — разница заметнее
+        const body = document.body || document.documentElement;
+
+        const span = document.createElement('span');
+        span.textContent = testString;
+        span.style.fontSize = testSize;
+        span.style.position = 'absolute';
+        span.style.left = '-9999px';
+        span.style.top = '-9999px';
+        span.style.whiteSpace = 'nowrap';
+
+        const baseMetrics = {};
+        body.appendChild(span);
+
+        // Сначала меряем базовые шрифты
+        const BASE_FONTS = ['monospace', 'sans-serif', 'serif'];
+
+        BASE_FONTS.forEach(base => {
+            span.style.fontFamily = base;
+            const rect = span.getBoundingClientRect();
+            baseMetrics[base] = { width: rect.width, height: rect.height };
+        });
+
+        const result = {};
+
+        fontNames.forEach(name => {
+          let isInstalled = false;
+
+          for (const base of BASE_FONTS) {
+            span.style.fontFamily = `"${name}",${base}`;
+            const rect = span.getBoundingClientRect();
+            const w = rect.width;
+            const h = rect.height;
+
+            const baseRect = baseMetrics[base];
+            // Если размеры отличаются от базового — значит, подставился настоящий шрифт
+            if (w !== baseRect.width || h !== baseRect.height) {
+                isInstalled = true;
+                break;
+            }
+          }
+
+          result[name] = isInstalled;
+        });
+
+        span.remove();
+        return result;
       }
 
-
-function detectInstalledFonts(fontNames) {
-  const testString = 'mmmmmmmmmwwwwwww0123456789абвгдABCD'; // чтобы ширина была чувствительной
-  const testSize = '72px'; // побольше — разница заметнее
-  const body = document.body || document.documentElement;
-
-  const span = document.createElement('span');
-  span.textContent = testString;
-  span.style.fontSize = testSize;
-  span.style.position = 'absolute';
-  span.style.left = '-9999px';
-  span.style.top = '-9999px';
-  span.style.whiteSpace = 'nowrap';
-
-  const baseMetrics = {};
-  body.appendChild(span);
-
-  // Сначала меряем базовые шрифты
-  const BASE_FONTS = ['monospace', 'sans-serif', 'serif'];
-
-  BASE_FONTS.forEach(base => {
-    span.style.fontFamily = base;
-    const rect = span.getBoundingClientRect();
-    baseMetrics[base] = { width: rect.width, height: rect.height };
-  });
-
-  const result = {};
-
-  fontNames.forEach(name => {
-    let isInstalled = false;
-
-    for (const base of BASE_FONTS) {
-      span.style.fontFamily = `"${name}",${base}`;
-      const rect = span.getBoundingClientRect();
-      const w = rect.width;
-      const h = rect.height;
-
-      const baseRect = baseMetrics[base];
-      // Если размеры отличаются от базового — значит, подставился настоящий шрифт
-      if (w !== baseRect.width || h !== baseRect.height) {
-        isInstalled = true;
-        break;
+      const hashMini = (x) => {
+        const json = `${JSON.stringify(x)}`
+        const hash = json.split('').reduce((hash, char, i) => {
+          return Math.imul(31, hash) + json.charCodeAt(i) | 0
+        }, 0x811c9dc5)
+        return ('0000000' + (hash >>> 0).toString(16)).substr(-8)
       }
-    }
-
-    result[name] = isInstalled;
-  });
-
-  span.remove();
-  return result;
-}
 
       function generateCanvasFingerprint(canvas) {
         const ctx = canvas.getContext('2d');
