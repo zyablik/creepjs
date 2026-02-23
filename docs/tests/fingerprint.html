@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <html>
   <head>
     <!-- this is to obtain fingerprint.json in chrome://version/fingerprint.html -->
@@ -21,6 +22,7 @@
 
         let fp = {
           navigator: {
+            schemaVersion: 1,
             userAgent: navigator?.userAgent,
 
             userAgentData: (await navigator?.userAgentData?.getHighEntropyValues(
@@ -1330,7 +1332,7 @@ const extendedFontList = ["Abadi MT Condensed Light", "Academy Engraved LET", "A
 
           diff_str += "</table>"
 
-          str += details(`diff table: passed fingerprint vs gathered: ${rows.length} rows`, diff_str, true);
+          str += details(`diff table: passed fingerprint vs gathered: ${rows.length} rows`, diff_str);
         }
 
         str += "<table>"
@@ -1403,10 +1405,15 @@ const extendedFontList = ["Abadi MT Condensed Light", "Academy Engraved LET", "A
                 <tr><td>(1).toLocaleString(navigator.language, {style: 'currency'}): </td><td>${fp.intl.toLocaleString_lang}</td></tr>
                 <tr><td>(new Intl.Collator).resolvedOptions().locale: </td><td>${fp.intl.locale}</td></tr>
                 `
-        str += th("canvas");
+        str += th("canvas2d");
 
         str += "<tr><td><canvas id=canvas_1 width=200 height=50></canvas></td><td id=hash_1></td></tr>"
         str += "<tr><td><canvas id=canvas_2 width=200 height=50></canvas></td><td id=hash_2></td></tr>"
+
+        str += th("canvas3d");
+
+        str += "<tr><td><canvas id=canvas_3 width=200 height=50></canvas></td><td id=hash_3></td></tr>"
+        str += "<tr><td><canvas id=canvas_4 width=200 height=50></canvas></td><td id=hash_4></td></tr>"
 
         str += details(
           `navigator.plugins: ${fp.navigator.plugins.length}`,
@@ -1545,19 +1552,31 @@ const extendedFontList = ["Abadi MT Condensed Light", "Academy Engraved LET", "A
 
         content.innerHTML = str
 
-        let fingerprint1 = generateCanvasFingerprint(document.getElementById("canvas_1"));
+        let fingerprint1 = generateCanvas2dFingerprint(document.getElementById("canvas_1"));
         let prev_fingerprint1_hash = localStorage.getItem("canvasFingerprint1");
         localStorage.setItem("canvasFingerprint1", fingerprint1.hash);
-        // console.log('Canvas Fingerprint Hash:', fingerprint1.hash);
+        // console.log('Canvas Fingerprint Hash 1:', fingerprint1.hash);
 
-        let fingerprint2 = generateCanvasFingerprint(document.getElementById("canvas_2"));
+        let fingerprint2 = generateCanvas2dFingerprint(document.getElementById("canvas_2"));
         let prev_fingerprint2_hash = localStorage.getItem("canvasFingerprint2");
         localStorage.setItem("canvasFingerprint2", fingerprint2.hash);
-        // console.log('Canvas Fingerprint Hash:', fingerprint2.hash);
-
+        // console.log('Canvas Fingerprint Hash 2:', fingerprint2.hash);
 
         document.getElementById("hash_1").innerHTML = `current hash = ${fingerprint1.hash} prev hash = ${prev_fingerprint1_hash}`
         document.getElementById("hash_2").innerHTML = `current hash = ${fingerprint2.hash} prev hash = ${prev_fingerprint2_hash}`
+
+        let fingerprint3 = generateCanvas3dFingerprint(document.getElementById("canvas_3"));
+        let prev_fingerprint3_hash = localStorage.getItem("canvasFingerprint3");
+        localStorage.setItem("canvasFingerprint3", fingerprint3.hash);
+        console.log('Canvas Fingerprint Hash 3:', fingerprint3.hash);
+
+        let fingerprint4 = generateCanvas3dFingerprint(document.getElementById("canvas_4"));
+        let prev_fingerprint4_hash = localStorage.getItem("canvasFingerprint4");
+        localStorage.setItem("canvasFingerprint4", fingerprint4.hash);
+        console.log('Canvas Fingerprint Hash 4:', fingerprint4.hash);
+
+        document.getElementById("hash_3").innerHTML = `current hash = ${fingerprint3.hash} prev hash = ${prev_fingerprint3_hash}`
+        document.getElementById("hash_4").innerHTML = `current hash = ${fingerprint4.hash} prev hash = ${prev_fingerprint4_hash}`
 
       });
 
@@ -1620,7 +1639,17 @@ const extendedFontList = ["Abadi MT Condensed Light", "Academy Engraved LET", "A
         return ('0000000' + (hash >>> 0).toString(16)).substr(-8)
       }
 
-      function generateCanvasFingerprint(canvas) {
+      function simpleHash(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+          const char = str.charCodeAt(i);
+          hash = (hash << 5) - hash + char;
+          hash |= 0;
+        }
+        return Math.abs(hash).toString(16);
+      }
+
+      function generateCanvas2dFingerprint(canvas) {
         const ctx = canvas.getContext('2d');
 
         ctx.textBaseline = 'top';
@@ -1648,15 +1677,7 @@ const extendedFontList = ["Abadi MT Condensed Light", "Academy Engraved LET", "A
 
         const dataURL = canvas.toDataURL();
 
-        function simpleHash(str) {
-          let hash = 0;
-          for (let i = 0; i < str.length; i++) {
-            const char = str.charCodeAt(i);
-            hash = (hash << 5) - hash + char;
-            hash |= 0;
-          }
-          return Math.abs(hash).toString(16);
-        }
+
 
         return {
           dataURL: dataURL,
@@ -1669,6 +1690,21 @@ const extendedFontList = ["Abadi MT Condensed Light", "Academy Engraved LET", "A
               textDrawing: typeof ctx.fillText !== 'undefined'
             }
           }
+        };
+      }
+
+      function generateCanvas3dFingerprint(canvas) {
+        gl = canvas.getContext('webgl2')
+        gl.clearColor(0.47, 0.7, 0.78, 1)
+        gl.clear(gl.COLOR_BUFFER_BIT)
+        dataURL = gl.canvas.toDataURL()
+        // console.log(dataURL)
+        const pixels = new Uint8Array(canvas.width * canvas.height * 4)
+        gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+        // console.log(pixels.toBase64())
+        return {
+          dataURL: pixels.toBase64(),
+          hash: simpleHash(pixels.toBase64()),
         };
       }
     </script>
