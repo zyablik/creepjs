@@ -154,6 +154,10 @@
             precisions: {},
           },
 
+          permissions: {},
+
+          drm: "default",
+
           voices: [],
 
           audioCodecs: {},
@@ -299,18 +303,54 @@
         });
 
         // speechSynthesis
-        if(speechSynthesis) {
-          speechSynthesis.onvoiceschanged = () => {
-          speechSynthesis.onvoiceschanged = null
-            fp.voices = speechSynthesis.getVoices().map((voice) => ({
-              name: voice.name,
-              voiceURI: voice.voiceURI,
-              lang: voice.lang,
-              localService: voice.localService,
-              default: voice.default
-            }))
-          };
+        if (window.speechSynthesis) {
+          const get_voices = () => new Promise(resolve => {
+            const done = () => {
+              speechSynthesis.removeEventListener('voiceschanged', done);
+              resolve(speechSynthesis.getVoices());
+            };
+            if (speechSynthesis.getVoices().length) return done();
+            speechSynthesis.addEventListener('voiceschanged', done);
+            setTimeout(done, 2000);
+          });
+
+          fp.voices = (await get_voices()).map(({ name, voiceURI, lang, localService, default: d }) =>
+            ({ name, voiceURI, lang, localService, default: d }));
         }
+
+        // permissions
+        const pNames = ['geolocation', 'notifications', 'push', 'microphone', 'camera', 'midi', 'magnetometer', 'accelerometer', 'gyroscope'];
+        fp.permissions = Object.fromEntries(await Promise.all(pNames.map(async n =>
+          [n, (await navigator.permissions.query({name: n}).catch(e => ({state: 'n/a'}))).state])));
+
+
+        // drm
+        const drmCheck = async (rob) => {
+          try {
+            await navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{
+              initDataTypes: ['cenc'],
+              videoCapabilities: [{contentType: 'video/mp4;codecs="avc1.42E01E"', robustness: rob}]
+            }]);
+            return true;
+          } catch (e) { return false; }
+        };
+
+        fp.drm = (await drmCheck('HW_SECURE_ALL')) ? 'L1' : (await drmCheck('SW_SECURE_DECODE')) ? 'L3' : 'none';
+
+
+        const mCheck = async (codec) => {
+            const { supported: s, smooth: f, powerEfficient: p } = await navigator.mediaCapabilities.decodingInfo({
+                type: 'file',
+                video: { contentType: `video/mp4; codecs="${codec}"`, width: 1920, height: 1080, bitrate: 10000, framerate: 60 }
+            });
+            return { s, f, p };
+            };
+
+            fp.media = {
+            av1: await mCheck('av01.0.08M.08'), // AV1 — стандарт для 2026 года
+            h265: await mCheck('hev1.1.6.L120.90'), // HEVC/H.265
+            vp9: await mCheck('vp09.00.10.08') // Google-стандарт
+            };
 
         // webrtc
 
