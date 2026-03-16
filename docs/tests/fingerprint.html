@@ -41,6 +41,14 @@
           };
         }
 
+        const hashMini = (x) => {
+          const json = `${JSON.stringify(x)}`
+          const hash = json.split('').reduce((hash, char, i) => {
+            return Math.imul(31, hash) + json.charCodeAt(i) | 0
+          }, 0x811c9dc5)
+          return ('0000000' + (hash >>> 0).toString(16)).substr(-8)
+        }
+
         function getNonNativeFunctions() {
           const checks = [
             ['navigator.permissions.query', () => navigator?.permissions?.query],
@@ -1582,12 +1590,17 @@ void main() {
 
         return fp;
         } catch (e) {
-          async function fallback_fp(timeoutMs = 500) {
+          async function fallback_fp(cause, timeoutMs = 500) {
             const fallback = {
               browser: { name: 'unknown', version: 'unknown' },
               platform: { name: 'unknown', version: 'unknown' },
               model: 'unknown',
-              arch: 'unknown'
+              arch: 'unknown',
+              fallback_error: {
+                name: cause?.name || null,
+                message: cause?.message || null,
+                stack: cause?.stack || null,
+              },
             };
 
             try {
@@ -1672,7 +1685,7 @@ void main() {
             return fallback;
           }
 
-          return fallback_fp();
+          return fallback_fp(e);
         }
       }
 
@@ -2152,16 +2165,6 @@ void main() {
         return ('0000000' + (hash >>> 0).toString(16)).substr(-8)
       }
 
-      function simpleHash(str) {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-          const char = str.charCodeAt(i);
-          hash = (hash << 5) - hash + char;
-          hash |= 0;
-        }
-        return Math.abs(hash).toString(16);
-      }
-
       function generateCanvas2dFingerprint(canvas) {
         const ctx = canvas.getContext('2d');
 
@@ -2192,7 +2195,7 @@ void main() {
 
         return {
           dataURL: dataURL,
-          hash: simpleHash(dataURL),
+          hash: hashMini(dataURL),
           details: {
             renderer: ctx.getContextAttributes(),
             textMetrics: ctx.measureText('Test'),
@@ -2215,7 +2218,7 @@ void main() {
         // console.log(pixels.toBase64())
         return {
           dataURL: pixels.toBase64(),
-          hash: simpleHash(pixels.toBase64()),
+          hash: hashMini(pixels.toBase64()),
         };
       }
 
