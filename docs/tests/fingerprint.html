@@ -712,10 +712,8 @@ void main() {
             }
 
             fp.navigator.gpu.features = Array.from(gpu_adapter?.features)
-          } else {
-            fp.navigator.gpu.status = 'not found';
+            fp.navigator.gpu.status = 'found';
           }
-
         fp.navigator.properties_hash = hashMini(fp.navigator.properties);
         fp.navigator.properties_version_hash = hashMini({p: fp.navigator.properties, v: fp.navigator.userAgentData?.uaFullVersion });
 
@@ -983,7 +981,10 @@ void main() {
 
         let config = {
           iceCandidatePoolSize: 1,
-          iceServers: [{ urls: [ 'stun:stun4.l.google.com:19302', 'stun:stun3.l.google.com:19302']}],
+          iceServers: [{ urls: [
+            // 'stun:31.192.109.31:3478'
+            'stun:stun.rtc.yandex.net:3478'
+          ]}],
         }
 
         let connection = new RTCPeerConnection(config)
