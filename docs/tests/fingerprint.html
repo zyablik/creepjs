@@ -966,11 +966,23 @@ void main() {
         async function get_ice_addresses(connection) {
           return new Promise((resolve) => {
             let addresses = []
-            setTimeout(() => { return resolve(["timeout"]) }, 1000)
+            setTimeout(() => { return resolve(["timeout"]) }, 5000)
+
+            connection.onicecandidateerror = (event) => {
+      const err = {
+        url: event.url,
+        errorCode: event.errorCode,
+        errorText: event.errorText,
+        address: event.address,
+        port: event.port,
+      };
+      console.log('icecandidateerror', err);
+    };
 
             connection.onicecandidate = (event) => {
               if(event.candidate) {
                 addresses.push(event.candidate.address)
+                console.log('icecandidate', event.candidate.candidate, 'address=', event.candidate.address);
               } else {
                 connection.onicecandidate = null
                 resolve(addresses)
