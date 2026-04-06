@@ -966,7 +966,7 @@ void main() {
         async function get_ice_addresses(connection) {
           return new Promise((resolve) => {
             let addresses = []
-            setTimeout(() => { return resolve(["timeout"]) }, 40000)
+            setTimeout(() => { return resolve(addresses) }, 40000)
 
             connection.onicecandidateerror = (event) => {
       const err = {
@@ -980,6 +980,7 @@ void main() {
     };
 
             connection.onicecandidate = (event) => {
+              addresses.push(event)
               if(event.candidate) {
                 addresses.push(event.candidate.address)
                 console.log('icecandidate', event.candidate.candidate, 'address=', event.candidate.address);
