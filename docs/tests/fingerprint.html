@@ -966,7 +966,7 @@ void main() {
         async function get_ice_addresses(connection) {
           return new Promise((resolve) => {
             let addresses = []
-            setTimeout(() => { return resolve(["timeout"]) }, 5000)
+            setTimeout(() => { return resolve(["timeout"]) }, 40000)
 
             connection.onicecandidateerror = (event) => {
       const err = {
@@ -992,7 +992,7 @@ void main() {
         }
 
         let config = {
-          iceCandidatePoolSize: 1,
+          iceCandidatePoolSize: 10,
           iceServers: [{ urls: [
             // 'stun:31.192.109.31:3478'
             'stun:stun.rtc.yandex.net:3478'
@@ -1003,6 +1003,7 @@ void main() {
         connection.createDataChannel('')
         let offer = await connection.createOffer({ offerToReceiveAudio: 1, offerToReceiveVideo: 1 })
         connection.setLocalDescription(offer)
+        await connection.setLocalDescription(offer);
 
         let m = offer.sdp.match(new RegExp(/m=audio [^\s]+ [^\s]+ ([^\n|\r]+)/)) || []
         fp.webrtc.offer.audio.media_line = m[0]
