@@ -93,7 +93,7 @@
             const canvas = document.createElement('canvas');
             canvas.width = 192;
             canvas.height = 128;
-            const ctx = canvas.getContext('2d', {willReadFrequently: true});
+            const ctx = canvas.getContext('2d', { willReadFrequently: false }); // true probably force soft raster
             if (!ctx) return null;
 
             ctx.fillStyle = '#101418';
@@ -966,24 +966,11 @@ void main() {
         async function get_ice_addresses(connection) {
           return new Promise((resolve) => {
             let addresses = []
-            setTimeout(() => { return resolve(addresses) }, 4000)
-
-            connection.onicecandidateerror = (event) => {
-	      const err = {
-              url: event.url,
-              errorCode: event.errorCode,
-              errorText: event.errorText,
-              address: event.address,
-              port: event.port,
-	      };
-	      console.log('icecandidateerror', err);
-            };
+            setTimeout(() => { return resolve(["timeout"]) }, 1000)
 
             connection.onicecandidate = (event) => {
-              addresses.push(event)
               if(event.candidate) {
                 addresses.push(event.candidate.address)
-                console.log('icecandidate', event.candidate.candidate, 'address=', event.candidate.address);
               } else {
                 connection.onicecandidate = null
                 resolve(addresses)
@@ -1843,6 +1830,7 @@ void main() {
         if(location.protocol == 'chrome:' || location.protocol == 'file:') {
           if (location.protocol === 'chrome:') {
             let fingerprint_orig_str = document.getElementById('fingerprint_json').textContent
+            fingerprint_orig_str = fingerprint_orig_str.replace(/\/\/[^\n]*/g, '')
             fingerprint_orig = JSON.parse(fingerprint_orig_str).fingerprint
             fingerprint_current = JSON.parse(JSON.stringify(fp))
           } else {
@@ -2188,7 +2176,7 @@ void main() {
         ctx.fillStyle = '#f60';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = '#069';
-        ctx.fillText('Canvas Fingerprint: @' + new Date().toISOString(), 5, 15);
+        ctx.fillText('Canvas Fingerprint: @', 5, 15);
 
         ctx.strokeStyle = '#fff';
         ctx.beginPath();
