@@ -10,6 +10,7 @@
 
       async function collect_fp() {
         'use strict';
+
         let battery = (await navigator?.getBattery?.());
 
         let hasTouch = () => {
@@ -77,6 +78,258 @@
           }
 
           return nonNative;
+        }
+
+        function hashBytes(bytes) {
+          let hash = 0x811c9dc5;
+          for (let i = 0; i < bytes.length; i++) {
+            hash ^= bytes[i];
+            hash = Math.imul(hash, 0x01000193);
+          }
+          return (hash >>> 0).toString(16).padStart(8, '0');
+        }
+
+
+        function collectCanvas2dHash() {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = 192;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d', { willReadFrequently: false }); // true probably force soft raster
+            if (!ctx) return null;
+
+            ctx.fillStyle = '#101418';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            gradient.addColorStop(0, '#ff6b6b');
+            gradient.addColorStop(0.37, '#feca57');
+            gradient.addColorStop(0.63, '#48dbfb');
+            gradient.addColorStop(1, '#5f27cd');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(8, 8, 112, 112);
+
+            ctx.globalCompositeOperation = 'multiply';
+            ctx.fillStyle = 'rgba(20, 20, 20, 0.45)';
+            ctx.beginPath();
+            ctx.arc(44, 48, 24, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(84, 78, 28, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(10, 118);
+            ctx.bezierCurveTo(28, 18, 100, 18, 118, 118);
+            ctx.stroke();
+
+            ctx.save();
+            ctx.translate(64, 64);
+            ctx.rotate(Math.PI / 7);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+            ctx.fillRect(-22, -22, 44, 44);
+            ctx.restore();
+
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = '#ffffff';
+            ctx.textBaseline = 'alphabetic';
+
+            ctx.font = '15px sans-serif';
+            ctx.fillText('fp:sans-serif:wmMWil1O0@#', 10, 28);
+
+            ctx.font = '15px serif';
+            ctx.fillText('fp:serif:wmMWil1O0@#', 10, 52);
+
+            ctx.font = '15px monospace';
+            ctx.fillText('fp:monospace:wmMWil1O0@#', 10, 76);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+            ctx.strokeRect(126.5, 14.5, 52, 52);
+            ctx.beginPath();
+            ctx.moveTo(126, 14);
+            ctx.lineTo(178, 66);
+            ctx.moveTo(178, 14);
+            ctx.lineTo(126, 66);
+            ctx.stroke();
+
+            const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            return hashBytes(data);
+          } catch (e) {
+            return null;
+          }
+        }
+
+        function collectCanvas3dHash() {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = 96;
+            canvas.height = 96;
+            const gl = canvas.getContext('webgl2', {
+              alpha: false,
+              antialias: false,
+              depth: false,
+              stencil: false,
+              preserveDrawingBuffer: true,
+            }) || canvas.getContext('webgl', {
+              alpha: false,
+              antialias: false,
+              depth: false,
+              stencil: false,
+              preserveDrawingBuffer: true,
+            });
+            if (!gl) return null;
+
+            const isWebGL2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext;
+            const compileShader = (type, source) => {
+              const shader = gl.createShader(type);
+              gl.shaderSource(shader, source);
+              gl.compileShader(shader);
+              if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                const info = gl.getShaderInfoLog(shader);
+                gl.deleteShader(shader);
+                throw new Error(info || 'shader compile failed');
+              }
+              return shader;
+            };
+
+            const vertexSource = isWebGL2
+              ? `#version 300 es
+precision highp float;
+in vec2 a_position;
+out vec2 v_uv;
+void main() {
+  v_uv = (a_position + 1.0) * 0.5;
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}`
+              : `precision highp float;
+attribute vec2 a_position;
+varying vec2 v_uv;
+void main() {
+  v_uv = (a_position + 1.0) * 0.5;
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}`;
+
+            const fragmentSource = isWebGL2
+              ? `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 outColor;
+void main() {
+  vec2 p = v_uv * 2.0 - 1.0;
+  float radius = length(p);
+  float wave = 0.5 + 0.5 * sin(p.x * 23.0 + p.y * 17.0);
+  float ring = smoothstep(0.78, 0.76, radius);
+  outColor = vec4(v_uv.x, wave, ring * (0.7 + 0.3 * cos(radius * 31.0)), 1.0);
+}`
+              : `precision highp float;
+varying vec2 v_uv;
+void main() {
+  vec2 p = v_uv * 2.0 - 1.0;
+  float radius = length(p);
+  float wave = 0.5 + 0.5 * sin(p.x * 23.0 + p.y * 17.0);
+  float ring = smoothstep(0.78, 0.76, radius);
+  gl_FragColor = vec4(v_uv.x, wave, ring * (0.7 + 0.3 * cos(radius * 31.0)), 1.0);
+}`;
+
+            const program = gl.createProgram();
+            const vs = compileShader(gl.VERTEX_SHADER, vertexSource);
+            const fs = compileShader(gl.FRAGMENT_SHADER, fragmentSource);
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+              throw new Error(gl.getProgramInfoLog(program) || 'program link failed');
+            }
+
+            gl.useProgram(program);
+            const positionLoc = gl.getAttribLocation(program, 'a_position');
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+              -1, -1,
+               1, -1,
+              -1,  1,
+               1,  1,
+            ]), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(positionLoc);
+            gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
+
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            gl.clearColor(0.03, 0.04, 0.05, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+            const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+            gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+            gl.deleteBuffer(buffer);
+            gl.deleteShader(vs);
+            gl.deleteShader(fs);
+            gl.deleteProgram(program);
+
+            return hashBytes(pixels);
+          } catch (e) {
+            return null;
+          }
+        }
+
+        // dumped from ya smartcaptcha
+        function collectCanvas2d_fjordbank() {
+            // ya smartcaptcha per-factor timer: Math.round(performance.now()*100)/100 (0.01ms),
+            // start/end wrap the whole collect (create canvas -> render -> toDataURL).
+            const ya_t = () => Math.round(performance.now() * 100) / 100;
+            const start = ya_t();
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 240;
+            canvas.height = 140;
+
+            const ctx = canvas.getContext("2d", { willReadFrequently: false });
+
+            ctx.rect(0, 0, 10, 10);
+            ctx.rect(2, 2, 6, 6);
+            ctx.textBaseline = "alphabetic";
+            ctx.fillStyle = "#f60";
+            ctx.fillRect(125, 1, 62, 20);
+            ctx.fillStyle = "#069";
+            ctx.font = "11pt no-real-font-123";
+            ctx.fillText("Cwm fjordbank 😃 gly", 2, 15);
+            ctx.fillStyle = "rgba(102, 204, 0, 0.2)";
+            ctx.font = "18pt Arial";
+            ctx.fillText("Cwm fjordbank 😃 gly", 4, 45);
+            ctx.globalCompositeOperation = "multiply";
+            ctx.fillStyle = "rgb(255,0,255)";
+            ctx.beginPath();
+            ctx.arc(50, 50, 50, 0, 6.28319, true);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = "rgb(0,255,255)";
+            ctx.beginPath();
+            ctx.arc(100, 50, 50, 0, 6.28319, true);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = "rgb(255,255,0)";
+            ctx.beginPath();
+            ctx.arc(75, 100, 50, 0, 6.28319, true);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = "rgb(255,0,255)";
+            ctx.arc(75, 75, 75, 0, 6.28319, true);
+            ctx.arc(75, 75, 25, 0, 6.28319, true);
+            ctx.fill("evenodd");
+
+	    const dataurl = canvas.toDataURL('image/png');
+            const end = ya_t();
+            return {
+              hash: hashMini(dataurl),
+              dataurl: dataurl,
+              start: start,
+              end: end,
+              calcTime: Math.round((end - start) * 100) / 100,  // ya-style render time (ms)
+            };
         }
 
         async function checkOfflineAudioContext() {
@@ -293,6 +546,514 @@
           }
         }
 
+        // ==== ya smartcaptcha (tmgrdfrend.fp.js) — verbatim probes ====================
+        // Собирает ровно то, что шлёт fast-payload капчи: k4 (шрифты), o7 (метрики
+        // системного шрифта), m4 (Widevine), медиа-запросы (m1,o3,o4,o8,o9,p1,p2,p5,p6,k7).
+        function ya_k4_fonts() {
+          // FingerprintJS font detection — verbatim list/string/size from ya fp.js
+          const baseFonts = ["monospace", "sans-serif", "serif"];
+          const testFonts = ["sans-serif-thin","ARNO PRO","Agency FB","Arabic Typesetting","Arial Unicode MS","AvantGarde Bk BT","BankGothic Md BT","Batang","Bitstream Vera Sans Mono","Calibri","Century","Century Gothic","Clarendon","EUROSTILE","Franklin Gothic","Futura Bk BT","Futura Md BT","GOTHAM","Gill Sans","HELV","Haettenschweiler","Helvetica Neue","Humanst521 BT","Leelawadee","Letter Gothic","Levenim MT","Lucida Bright","Lucida Sans","Menlo","MS Mincho","MS Outlook","MS Reference Specialty","MS UI Gothic","MT Extra","MYRIAD PRO","Marlett","Meiryo UI","Microsoft Uighur","Minion Pro","Monotype Corsiva","PMingLiU","Pristina","SCRIPTINA","Segoe UI Light","Serifa","SimHei","Small Fonts","Staccato222 BT","TRAJAN PRO","Univers CE 55 Medium","Vrinda","ZWAdobeF"];
+          const testString = "mmMwWLliI0O&1";
+          const s = document.createElement("span");
+          s.style.cssText = "position:absolute;left:-9999px;font-size:48px;font-style:normal;font-weight:normal;letter-spacing:normal;line-height:normal;text-transform:none;text-align:left;text-decoration:none;white-space:normal;word-spacing:normal;";
+          s.textContent = testString;
+          const baseW = {}, baseH = {};
+          for (const base of baseFonts) {
+            s.style.fontFamily = base;
+            document.body.appendChild(s);
+            baseW[base] = s.offsetWidth; baseH[base] = s.offsetHeight;
+            document.body.removeChild(s);
+          }
+          // detected = ровно то, что уходит в k4 (как у Яндекса); all = полная таблица
+          // по всем 51 кандидату (present + ширины по каждому генерику) для сверки.
+          const detected = [], all = [];
+          for (const font of testFonts) {
+            const per = {};
+            let present = false;
+            for (const base of baseFonts) {
+              s.style.fontFamily = "'" + font + "'," + base;
+              document.body.appendChild(s);
+              const w = s.offsetWidth, h = s.offsetHeight;
+              document.body.removeChild(s);
+              per[base] = [w, h];
+              if (w !== baseW[base] || h !== baseH[base]) present = true;
+            }
+            all.push({ font, present, per });
+            if (present) detected.push(font);
+          }
+          return { detected, all, baseW, baseH };
+        }
+
+        function ya_o7_fontPrefs() {
+          // ya o7: text-block metrics per CSS system-font keyword (default-font tell)
+          const presets = {
+            default: {}, apple: { font: "-apple-system-body" },
+            serif: { fontFamily: "serif" }, sans: { fontFamily: "sans-serif" },
+            mono: { fontFamily: "monospace" }, min: { fontSize: "1px" },
+            system: { fontFamily: "system-ui" },
+          };
+          const fallback = "mmMwWLliI0fiflO&1";
+          const box = document.createElement("div");
+          box.style.cssText = "position:absolute;left:-9999px;width:4000px;-webkit-text-size-adjust:none;text-size-adjust:none;";
+          document.body.appendChild(box);
+          const out = {};
+          for (const [name, style] of Object.entries(presets)) {
+            const span = document.createElement("span");
+            span.style.whiteSpace = "nowrap";
+            if (style.font) span.style.font = style.font;
+            if (style.fontFamily) span.style.fontFamily = style.fontFamily;
+            if (style.fontSize) span.style.fontSize = style.fontSize;
+            span.textContent = fallback;
+            box.appendChild(span);
+            const r = span.getBoundingClientRect();
+            out[name] = { w: +r.width.toFixed(2), h: +r.height.toFixed(2) };
+          }
+          document.body.removeChild(box);
+          return out;
+        }
+
+        async function ya_m4_widevine() {
+          // ya m4: single Widevine probe (NO robustness), 500ms timeout race -> bool/"timeout"
+          if (!(navigator.requestMediaKeySystemAccess && typeof navigator.requestMediaKeySystemAccess === "function"))
+            return false;
+          const probe = navigator.requestMediaKeySystemAccess("com.widevine.alpha", [{
+            initDataTypes: ["cenc"],
+            audioCapabilities: [{ contentType: 'audio/mp4;codecs="mp4a.40.2"' }],
+            videoCapabilities: [{ contentType: 'video/mp4;codecs="avc1.42E01E"' }],
+          }]).then(() => true).catch(() => false);
+          const timeout = new Promise((res) => setTimeout(() => res("timeout"), 500));
+          return Promise.race([probe, timeout]);
+        }
+
+        function ya_mediaQueries() {
+          const mm = (q) => (typeof matchMedia === "function" ? matchMedia(q).matches : null);
+          const first = (feature, values) => { for (const v of values) if (mm(`(${feature}: ${v})`)) return v; return null; };
+          let monochrome = null;
+          if (mm("(min-monochrome: 0)")) { for (let i = 0; i <= 100; i++) { if (mm(`(max-monochrome: ${i})`)) { monochrome = i; break; } } }
+          return {
+            m1_prefersColorScheme: first("prefers-color-scheme", ["dark", "light"]),
+            o3_colorGamut: first("color-gamut", ["rec2020", "p3", "srgb"]),
+            o4_prefersContrast: first("prefers-contrast", ["no-preference", "high", "more", "low", "less", "forced"]),
+            o8_forcedColors: first("forced-colors", ["active", "none"]),
+            o9_dynamicRange: first("dynamic-range", ["high", "standard"]),
+            p1_invertedColors: first("inverted-colors", ["inverted", "none"]),
+            p2_monochrome: monochrome,
+            p5_prefersReducedMotion: first("prefers-reduced-motion", ["reduce", "no-preference"]),
+            p6_prefersReducedTransparency: first("prefers-reduced-transparency", ["reduce", "no-preference"]),
+            k7_retina2x: mm("(-webkit-min-device-pixel-ratio: 2), (min-device-pixel-ratio: 2), (min-resolution: 192dpi)"),
+          };
+        }
+
+        function ya_n5_video() {
+          // ya n5: video canPlayType over a fixed codec set (verbatim)
+          const v = document.createElement("video");
+          return {
+            h264:   v.canPlayType('video/mp4; codecs="avc1.42E01E"'),
+            h265:   v.canPlayType('video/mp4; codecs="hev1.1.6.L93.B0"'),
+            vp8:    v.canPlayType('video/webm; codecs="vp8"'),
+            vp9:    v.canPlayType('video/webm; codecs="vp9"'),
+            av1:    v.canPlayType('video/mp4; codecs="av01.0.05M.08"'),
+            theora: v.canPlayType('video/ogg; codecs="theora"'),
+          };
+        }
+
+        function ya_r1_audio() {
+          // ya r1: audio canPlayType over a fixed codec set (verbatim)
+          const a = document.createElement("audio");
+          return {
+            aac:         a.canPlayType('audio/mp4; codecs="mp4a.40.2"'),
+            he_aac:      a.canPlayType('audio/mp4; codecs="mp4a.40.5"'),
+            mpeg:        a.canPlayType('audio/mpeg'),
+            ogg_opus:    a.canPlayType('audio/ogg; codecs="opus"'),
+            ogg_vorbis:  a.canPlayType('audio/ogg; codecs="vorbis"'),
+            ogg_flac:    a.canPlayType('audio/ogg; codecs="flac"'),
+            flac:        a.canPlayType('audio/flac'),
+            webm_opus:   a.canPlayType('audio/webm; codecs="opus"'),
+            webm_vorbis: a.canPlayType('audio/webm; codecs="vorbis"'),
+            wav:         a.canPlayType('audio/wav; codecs="1"'),
+            mp4_flac:    a.canPlayType('audio/mp4; codecs="flac"'),
+            ac3:         a.canPlayType('audio/mp4; codecs="ac-3"'),
+            ec3:         a.canPlayType('audio/mp4; codecs="ec-3"'),
+          };
+        }
+
+        function ya_metrika_codecs() {
+          // Yandex Metrika fip: 10 bare MIME types followed by their 7-codec
+          // cross-product. Metrika deliberately uses a video element for all 80 probes.
+          const mimeTypes = [
+            "video/ogg", "video/mp4", "video/webm", "audio/x-aiff",
+            "audio/x-m4a", "audio/mpeg", "audio/aac", "audio/wav",
+            "audio/ogg", "audio/mp4",
+          ];
+          const codecs = [
+            "theora", "vorbis", "1", "avc1.4D401E",
+            "mp4a.40.2", "vp8.0", "mp4a.40.5",
+          ];
+          const types = mimeTypes.concat(
+            mimeTypes.flatMap((mime) =>
+              codecs.map((codec) => `${mime}; codecs=${codec}`)));
+          const media = document.createElement("video");
+          try {
+            return types.map((type) => ({
+              type,
+              value: media.canPlayType(type),
+            }));
+          } catch (e) {
+            return "canPlayType";
+          }
+        }
+
+        function ya_a3_math() {
+          // ya a3: Math transcendental fingerprint (verbatim funcs + inputs + Pf polyfills)
+          const M = Math;
+          const f = (n) => (M[n] || (() => 0));
+          const acos=f('acos'),acosh=f('acosh'),asin=f('asin'),asinh=f('asinh'),atanh=f('atanh'),
+                atan=f('atan'),sin=f('sin'),sinh=f('sinh'),cos=f('cos'),cosh=f('cosh'),
+                tan=f('tan'),tanh=f('tanh'),exp=f('exp'),expm1=f('expm1'),log1p=f('log1p');
+          return {
+            acos: acos(0.12312423423423424),
+            acosh: acosh(1e+308),
+            acoshPf: M.log(1e+154 + M.sqrt(1e+154 * 1e+154 - 1)),
+            asin: asin(0.12312423423423424),
+            asinh: asinh(1),
+            asinhPf: M.log(1 + M.sqrt(1 * 1 + 1)),
+            atanh: atanh(0.5),
+            atanhPf: M.log((1 + 0.5) / (1 - 0.5)) / 2,
+            atan: atan(0.5),
+            sin: sin(-1e+300),
+            sinh: sinh(1),
+            sinhPf: M.exp(1) - 1 / M.exp(1) / 2,
+            cos: cos(10.000000000123),
+            cosh: cosh(1),
+            coshPf: (M.exp(1) + 1 / M.exp(1)) / 2,
+            tan: tan(-1e+300),
+            tanh: tanh(1),
+            tanhPf: (M.exp(2) - 1) / (M.exp(2) + 1),
+            exp: exp(1),
+            expm1: expm1(1),
+            expm1Pf: M.exp(1) - 1,
+            log1p: log1p(10),
+            log1pPf: M.log(11),
+            powPI: M.pow(M.PI, -100),
+          };
+        }
+
+        function ya_a4_perfTimer() {
+          // ya a4: performance.now() timer resolution — 50000 iters, min/max delta
+          const perf = window.performance;
+          if (perf == null || !perf.now) return null;
+          let minDelta = Infinity, maxDelta = -Infinity;
+          let prev = perf.now();
+          for (let i = 0; i < 50000; i++) {
+            const now = perf.now();
+            const d = now - prev;
+            minDelta = Math.min(minDelta, d);
+            maxDelta = Math.max(maxDelta, d);
+            prev = now;
+          }
+          return { minDelta, maxDelta };
+        }
+
+        function ya_o2_float32() {
+          // ya o2: Float32 Infinity-Infinity byte[3] (NaN encoding / endianness)
+          const f = new Float32Array(1);
+          const u = new Uint8Array(f.buffer);
+          f[0] = Infinity;
+          f[0] = f[0] - f[0];
+          return u[3];
+        }
+
+        async function ya_a1_audio() {
+          // ya a1: FingerprintJS getAudioFingerprint (square osc -> compressor -> allpass biquad,
+          // then loopback re-render, tail sample). Verbatim: sr=44100, loopback pad=40000.
+          const W = window;
+          const OAC = W.OfflineAudioContext || W.webkitOfflineAudioContext;
+          if (!OAC) return "NotSupported";
+          const sr = 44100;
+          const renderAudio = (ctx) => new Promise((resolve, reject) => {
+            let retries = 25;
+            ctx.oncomplete = (e) => resolve(e.renderedBuffer);
+            const tryRender = () => {
+              try {
+                const p = ctx.startRendering();
+                if (p && typeof p.then === 'function') p.then(undefined, () => {});
+                if (ctx.state === 'suspended') {
+                  if (!document.hidden) retries--;
+                  if (retries > 0) setTimeout(tryRender, 200); else resolve(null);
+                }
+              } catch (e) { reject(e); }
+            };
+            tryRender();
+          });
+          try {
+            const c1 = new OAC(1, 3396, sr);
+            const osc = c1.createOscillator(); osc.type = 'square'; osc.frequency.value = 1000;
+            const comp = c1.createDynamicsCompressor();
+            comp.threshold.value = -70; comp.knee.value = 40; comp.ratio.value = 12;
+            comp.attack.value = 0; comp.release.value = 0.25;
+            const bq = c1.createBiquadFilter(); bq.type = 'allpass';
+            bq.frequency.value = 5.239622852977861; bq.Q.value = 0.1;
+            osc.connect(comp); comp.connect(bq); bq.connect(c1.destination); osc.start(0);
+            const b1 = await renderAudio(c1);
+            if (!b1) return "Timeout";
+            const c2 = new OAC(1, b1.length - 1 + 40000, sr);
+            const src = c2.createBufferSource(); src.buffer = b1; src.loop = true;
+            src.loopStart = (b1.length - 1) / sr; src.loopEnd = b1.length / sr;
+            src.connect(c2.destination); src.start();
+            const b2 = await renderAudio(c2);
+            if (!b2) return "Timeout";
+            const data = b2.getChannelData(0).subarray(b1.length - 1);
+            let val, mixed = false;
+            const step = Math.floor(data.length / 10) || 1;
+            for (let i = 0; i < data.length; i += step) {
+              if (data[i] === 0) continue;
+              if (val === undefined) val = data[i];
+              else if (val !== data[i]) { mixed = true; break; }
+            }
+            if (val === undefined) {
+              val = b1.getChannelData(0)[b1.length - 1];
+            } else if (mixed) {
+              let mn = Infinity, mx = -Infinity;
+              for (let i = 0; i < data.length; i++) {
+                const x = data[i];
+                if (x !== 0) { if (x < mn) mn = x; if (x > mx) mx = x; }
+              }
+              val = (mn + mx) / 2;
+            }
+            return Math.abs(val);
+          } catch (e) {
+            return "error: " + (e && e.name);
+          }
+        }
+
+        function ya_md5(str) {
+          // ya a5 hashes with SparkMD5.hash(x, false) -> lowercase hex md5 of the utf8 bytes.
+          const bytes = [];
+          for (let i = 0; i < str.length; i++) {
+            let c = str.charCodeAt(i);
+            if (c < 0x80) bytes.push(c);
+            else if (c < 0x800) bytes.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+            else if (c < 0xd800 || c >= 0xe000) bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+            else {
+              i++;
+              c = 0x10000 + (((c & 0x3ff) << 10) | (str.charCodeAt(i) & 0x3ff));
+              bytes.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+            }
+          }
+          const S = [7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,
+                     5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,
+                     4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,
+                     6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21];
+          const K = new Int32Array(64);
+          for (let i = 0; i < 64; i++) K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296) | 0;
+          const len = bytes.length;
+          const nBlocks = ((len + 8) >> 6) + 1;
+          const buf = new Uint8Array(nBlocks * 64);
+          buf.set(bytes);
+          buf[len] = 0x80;
+          const dv = new DataView(buf.buffer);
+          dv.setUint32(nBlocks * 64 - 8, (len * 8) >>> 0, true);
+          dv.setUint32(nBlocks * 64 - 4, Math.floor(len / 536870912), true);
+          let a0 = 0x67452301 | 0, b0 = 0xefcdab89 | 0, c0 = 0x98badcfe | 0, d0 = 0x10325476 | 0;
+          const M = new Int32Array(16);
+          for (let blk = 0; blk < nBlocks; blk++) {
+            for (let j = 0; j < 16; j++) M[j] = dv.getInt32(blk * 64 + j * 4, true);
+            let A = a0, B = b0, C = c0, D = d0;
+            for (let i = 0; i < 64; i++) {
+              let F, g;
+              if (i < 16) { F = (B & C) | (~B & D); g = i; }
+              else if (i < 32) { F = (D & B) | (~D & C); g = (5 * i + 1) % 16; }
+              else if (i < 48) { F = B ^ C ^ D; g = (3 * i + 5) % 16; }
+              else { F = C ^ (B | ~D); g = (7 * i) % 16; }
+              F = (F + A + K[i] + M[g]) | 0;
+              A = D; D = C; C = B;
+              B = (B + ((F << S[i]) | (F >>> (32 - S[i])))) | 0;
+            }
+            a0 = (a0 + A) | 0; b0 = (b0 + B) | 0; c0 = (c0 + C) | 0; d0 = (d0 + D) | 0;
+          }
+          const hx = (x) => {
+            let r = '';
+            for (let i = 0; i < 4; i++) r += ((x >>> (8 * i)) & 255).toString(16).padStart(2, '0');
+            return r;
+          };
+          return hx(a0) + hx(b0) + hx(c0) + hx(d0);
+        }
+
+        // ya A4(): WebGL1 only ("webgl", then "experimental-webgl"). Never webgl2.
+        // Cached, so j1 and j2 observe the same context, as in the collector.
+        let _ya_gl_cache;
+        function ya_webgl_context() {
+          if (_ya_gl_cache !== undefined) return _ya_gl_cache;
+          let ctx;
+          const cv = document.createElement("canvas");
+          cv.addEventListener("webglCreateContextError", () => { ctx = undefined; });
+          for (const name of ["webgl", "experimental-webgl"]) {
+            try { ctx = cv.getContext(name); } catch (e) {}
+            if (ctx) break;
+          }
+          _ya_gl_cache = ctx || null;
+          return _ya_gl_cache;
+        }
+
+        // ya A6()/A7(): every key on the object's own __proto__ whose name matches
+        // /^[A-Z0-9_x]+$/ -- note the lowercase x, which is verbatim from the collector.
+        function ya_webgl_constNames(obj) {
+          return Object.keys(obj.__proto__).filter(
+              (k) => typeof k === 'string' && !/[^A-Z0-9_x]/.exec(k));
+        }
+
+        function ya_j1_webgl() {
+          // ya j1: plain + UNMASKED vendor/renderer, VERSION, SHADING_LANGUAGE_VERSION.
+          // Sentinels are verbatim: -1 = no context, -2 = context without getParameter.
+          const gl = ya_webgl_context();
+          if (!gl) return -1;
+          if (typeof gl.getParameter !== 'function') return -2;
+          // A8() is a Firefox check (buildID/MozAppearance/...), false on Chrome, so the
+          // debug_renderer_info extension is queried rather than skipped.
+          const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+          const str = (v) => (v === null || v === undefined) ? undefined : v.toString();
+          return {
+            vn: str(gl.getParameter(gl.VERSION)) || "",
+            vr: str(gl.getParameter(gl.VENDOR)) || "",
+            vU: dbg ? str(gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL)) : "",
+            r: str(gl.getParameter(gl.RENDERER)) || "",
+            rU: dbg ? str(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : "",
+            sLV: str(gl.getParameter(gl.SHADING_LANGUAGE_VERSION)) || "",
+          };
+        }
+
+        // ya Ak: enum values the collector considers valid getParameter() targets.
+        const YA_GETPARAM_OK = new Set([10752, 2849, 2884, 2885, 2886, 2928, 2929, 2930,
+          2931, 2932, 2960, 2961, 2962, 2963, 2964, 2965, 2966, 2967, 2968, 2978, 3024,
+          3042, 3088, 3089, 3106, 3107, 32773, 32777, 32777, 32823, 32824, 32936, 32937,
+          32938, 32939, 32968, 32969, 32970, 32971, 3317, 33170, 3333, 3379, 3386, 33901,
+          33902, 34016, 34024, 34076, 3408, 3410, 3411, 3412, 3413, 3414, 3415, 34467,
+          34816, 34817, 34818, 34819, 34877, 34921, 34930, 35660, 35661, 35724, 35738,
+          35739, 36003, 36004, 36005, 36347, 36348, 36349, 37440, 37441, 37443, 7936,
+          7937, 7938]);
+        // ya AD: same, but for constants found on extension objects.
+        const YA_EXT_GETPARAM_OK = new Set([34047, 35723, 36063, 34852, 34853, 34854,
+          34229, 36392, 36795, 38449]);
+        const YA_SHADERS = ["FRAGMENT_SHADER", "VERTEX_SHADER"];
+        const YA_PRECISIONS = ["LOW_FLOAT", "MEDIUM_FLOAT", "HIGH_FLOAT", "LOW_INT", "MEDIUM_INT", "HIGH_INT"];
+
+        function ya_j2_webgl() {
+          // ya j2: cA = context attributes, p = every context constant (+ getParameter for
+          // the Ak set), sP = shader precision matrix, e = supported extensions,
+          // eP = every extension constant (+ getParameter for the AD set).
+          // p and eP are sorted by the collector; cA and sP are not.
+          const gl = ya_webgl_context();
+          if (!gl) return -1;
+          if (typeof gl.getParameter !== 'function') return -2;
+
+          const attrs = gl.getContextAttributes();
+          const cA = attrs ? Object.keys(attrs).map((k) => k + "=" + attrs[k]) : [];
+
+          const p = ya_webgl_constNames(gl).map((name) => {
+            const v = gl[name];
+            let s = name + "=" + v;
+            if (YA_GETPARAM_OK.has(v)) s += "=" + gl.getParameter(v);
+            return s;
+          });
+
+          const e = gl.getSupportedExtensions();
+          const eP = [];
+          if (e) {
+            for (const name of e) {
+              const ext = gl.getExtension(name);
+              if (!ext) continue;
+              for (const key of ya_webgl_constNames(ext)) {
+                const v = ext[key];
+                eP.push(`${key}=${v}${YA_EXT_GETPARAM_OK.has(v) ? "=" + gl.getParameter(v) : ""}`);
+              }
+            }
+          }
+
+          const sP = [];
+          for (const shader of YA_SHADERS) {
+            for (const prec of YA_PRECISIONS) {
+              const f = gl.getShaderPrecisionFormat(gl[shader], gl[prec]);
+              const vals = f ? [f.rangeMin, f.rangeMax, f.precision] : [];
+              sP.push(shader + "." + prec + "=" + vals.join(","));
+            }
+          }
+
+          eP.sort();
+          p.sort();
+          return { cA, p, sP, e, eP };
+        }
+
+        function ya_a5_webglHash() {
+          // ya a5: rotating-triangle WebGL1 render -> md5(canvas.toDataURL()).
+          // Verbatim: default 300x150 canvas, clearColor(0,0,1,1), t=3.65,
+          // TRIANGLE_FAN over [0,1, -1,-1, 1,-1], red fragment on blue clear.
+          //
+          // a5 builds its OWN canvas and context instead of reusing the A4 cache that
+          // j1/j2 share -- it has to, since the draw dirties state that j2 reads back
+          // through getParameter (COLOR_CLEAR_VALUE, CURRENT_PROGRAM, buffer bindings).
+          let gl;
+          {
+            const cv = document.createElement("canvas");
+            cv.addEventListener("webglCreateContextError", () => { gl = undefined; });
+            for (const name of ["webgl", "experimental-webgl"]) {
+              try { gl = cv.getContext(name); } catch (e) {}
+              if (gl) break;
+            }
+          }
+          const prog = gl == null ? undefined : gl.createProgram();
+          if (!gl || !prog) return null;
+          const addShader = (offset, src) => {
+            const sh = gl.createShader(35633 - offset);
+            if (prog && sh) {
+              gl.shaderSource(sh, src);
+              gl.compileShader(sh);
+              gl.attachShader(prog, sh);
+            }
+          };
+          gl.clearColor(0, 0, 1, 1);
+          addShader(0, "attribute vec2 p;uniform float t;void main(){float s=sin(t);float c=cos(t);gl_Position=vec4(p*mat2(c,s,-s,c),1,1);}");
+          addShader(1, "void main(){gl_FragColor=vec4(1,0,0,1);}");
+          gl.linkProgram(prog);
+          gl.useProgram(prog);
+          gl.enableVertexAttribArray(0);
+          const t = gl.getUniformLocation(prog, "t");
+          const buf = gl.createBuffer();
+          gl.bindBuffer(34962, buf);
+          gl.bufferData(34962, new Float32Array([0, 1, -1, -1, 1, -1]), 35044);
+          gl.vertexAttribPointer(0, 2, 5126, false, 0, 0);
+          gl.clear(16384);
+          gl.uniform1f(t, 3.65);
+          gl.drawArrays(4, 0, 3);
+          const url = gl.canvas.toDataURL();
+          return { md5: ya_md5(url), dataURL_len: url.length };
+        }
+
+        async function collectYaProbes() {
+          try {
+            return {
+              fonts_k4: ya_k4_fonts(),
+              fontPrefs_o7: ya_o7_fontPrefs(),
+              widevine_m4: await ya_m4_widevine(),
+              mediaQueries: ya_mediaQueries(),
+              video_n5: ya_n5_video(),
+              audio_r1: ya_r1_audio(),
+              metrika_codecs: ya_metrika_codecs(),
+              math_a3: ya_a3_math(),
+              perfTimer_a4: ya_a4_perfTimer(),
+              float32_o2: ya_o2_float32(),
+              audio_a1: await ya_a1_audio(),
+              // j1/j2 read the shared cached context and must run before a5 in source
+              // order only for readability -- a5 uses its own context either way.
+              webgl_j1: ya_j1_webgl(),
+              webgl_j2: ya_j2_webgl(),
+              webglRender_a5: ya_a5_webglHash(),
+              md5_selftest: ya_md5("abc"), // must be 900150983cd24fb0d6963f7d28e17f72
+            };
+          } catch (e) {
+            return { error: e?.name + ': ' + e?.message };
+          }
+        }
+
         try {
           let fp = {
             navigator: {
@@ -441,6 +1202,7 @@
             canvas2d_hash: null,
             canvas2d_fjordbank_hash: null,
             canvas2d_fjordbank_dataurl: null,
+            canvas2d_fjordbank_calcTime: null,  // ya-style render time (ms)
             canvas3d_hash: null,
 
             webgl_hash: null,
@@ -478,6 +1240,8 @@
             },
 
             fonts: [],
+
+            yandex: {},  // ya smartcaptcha probes: k4/o7/m4/media
           };
 
           fp.navigator.plugins = Array.from(navigator.plugins || []).map((p) => ({
@@ -536,6 +1300,7 @@
           const canvas2d_fjordbank = collectCanvas2d_fjordbank();
           fp.canvas2d_fjordbank_hash = canvas2d_fjordbank.hash;
           fp.canvas2d_fjordbank_dataurl = canvas2d_fjordbank.dataurl;
+          fp.canvas2d_fjordbank_calcTime = { calcTime: canvas2d_fjordbank.calcTime, start: canvas2d_fjordbank.start, end: canvas2d_fjordbank.end };
 
         // webgl
         let canvas2 = document.createElement("canvas");
@@ -646,6 +1411,9 @@
           'clipboard-write', 'background-sync', 'persistent-storage',
           'idle-detection', 'window-management', 'screen-wake-lock',
           'speaker-selection',
+          // probed by ya smartcaptcha (groups y/x) but were missing here
+          'device-info', 'background-fetch', 'bluetooth', 'ambient-light-sensor',
+          'display-capture', 'nfc',
         ];
 
         if(navigator?.permissions?.query) {
@@ -1291,18 +2059,18 @@
             debug: filteredDebug,
           };
         };
-
-        let fonts_promise = detectFontsAndPlatform();
-        fonts_promise.then((fontInfo) => {
-          fp.fonts = fontInfo.fonts;
-          fp.font_detection = {
-            platform: fontInfo.platform,
-            vendor: fontInfo.vendor,
-            scores: fontInfo.scores,
-          };
-          fp.fonts_debug = fontInfo.debug;
-        });
 // </neuroslop>
+
+        // let fonts_promise = detectFontsAndPlatform();
+        // fonts_promise.then((fontInfo) => {
+        //   fp.fonts = fontInfo.fonts;
+        //   fp.font_detection = {
+        //     platform: fontInfo.platform,
+        //     vendor: fontInfo.vendor,
+        //     scores: fontInfo.scores,
+        //   };
+        //   fp.fonts_debug = fontInfo.debug;
+        // });
 
         // ----
 
@@ -1319,15 +2087,21 @@
             'audio/mpeg',                        // mp3
             'audio/mp3',
             'audio/mpegurl',
+            'audio/mp4; codecs="mp4a.40.2"',     // Yandex r1: AAC-LC
+            'audio/mp4; codecs="mp4a.40.5"',     // Yandex r1: HE-AAC
             'audio/wav; codecs="1"',             // PCM
             'audio/wav',
             'audio/x-wav',
             'audio/flac',
             'audio/ogg; codecs="vorbis"',
             'audio/ogg; codecs="opus"',
+            'audio/ogg; codecs="flac"',          // Yandex r1
             'audio/webm; codecs="opus"',
             'audio/webm; codecs="vorbis"',
             'audio/mp4',                         // m4a
+            'audio/mp4; codecs="flac"',          // Yandex r1
+            'audio/mp4; codecs="ac-3"',          // Yandex r1
+            'audio/mp4; codecs="ec-3"',          // Yandex r1
             'audio/x-m4a',
             'audio/amr',
             'audio/ac3',
@@ -1341,6 +2115,8 @@
             'video/mp4; codecs="mp4v.20.3"',     // MPEG-4 Part 2
             'video/mp4; codecs="hvc1"',          // HEVC/H.265 (iOS/Safari only)
             'video/mp4; codecs="hev1"',
+            'video/mp4; codecs="hev1.1.6.L93.B0"', // Yandex n5: HEVC/H.265
+            'video/mp4; codecs="av01.0.05M.08"', // Yandex n5: AV1
 
             'video/webm; codecs="vp8"',
             'video/webm; codecs="vp9"',
@@ -1402,7 +2178,9 @@
           fp.offlineAudioContext = result;
         });
 
-        await Promise.all([ice_promise, fonts_promise, fps_promise, offline_audio_promise]);
+        fp.yandex = await collectYaProbes();
+
+        await Promise.all([ice_promise/*, fonts_promise*/, fps_promise, offline_audio_promise]);
 
         return fp;
         } catch (e) {
@@ -1645,7 +2423,7 @@
         if(location.protocol == 'chrome:' || location.protocol == 'file:') {
           if (location.protocol === 'chrome:') {
             let fingerprint_orig_str = document.getElementById('fingerprint_json').textContent
-            fingerprint_orig_str = fingerprint_orig_str.replace(/\/\/[^\n]*/g, '')
+            fingerprint_orig_str = fingerprint_orig_str.replace(/^\s*\/\/.*$/gm, '')
             fingerprint_orig = JSON.parse(fingerprint_orig_str).fingerprint
             fingerprint_current = JSON.parse(JSON.stringify(fp))
           } else {
@@ -1762,6 +2540,7 @@
         str += `<tr><td>canvas2d_hash</td><td>${JSON.stringify(fp.canvas2d_hash)}</td></tr>`
         str += `<tr><td>canvas2d_fjordbank_hash</td><td>${JSON.stringify(fp.canvas2d_fjordbank_hash)}</td></tr>`
         str += `<tr><td>canvas2d_fjordbank_dataurl</td><td>${fp.canvas2d_fjordbank_dataurl.length + " chars"}</td></tr>`
+        str += `<tr><td>canvas2d_fjordbank_calcTime (ya render time, ms)</td><td>${JSON.stringify(fp.canvas2d_fjordbank_calcTime)}</td></tr>`
 
         str += "<tr><td><canvas id=canvas_1 width=200 height=50></canvas></td><td id=hash_1></td></tr>"
         str += "<tr><td><canvas id=canvas_2 width=200 height=50></canvas></td><td id=hash_2></td></tr>"
@@ -1820,6 +2599,96 @@
         str += th("permissions")
         for (let [name, state] of Object.entries(fp.permissions)) {
           str += `<tr><td>${name}</td><td>${JSON.stringify(state)}</td></tr>`
+        }
+
+        // ==== ya smartcaptcha probes (fast-payload tmgrdfrend.fp.js) ====
+        str += th("⚠ yandex smartcaptcha probes (fast-payload)")
+
+        const ya = fp.yandex || {};
+
+        str += `<tr><td>m4: Widevine (com.widevine.alpha, no robustness, 500ms race)</td><td>${JSON.stringify(ya.widevine_m4)}</td></tr>`
+
+        str += `<tr><td colspan=2 style="padding-top:8px"><b>WebGL — j1 / j2 / a5 (WebGL1 context only, never webgl2)</b></td></tr>`
+        if (ya.md5_selftest !== "900150983cd24fb0d6963f7d28e17f72") {
+          str += `<tr><td>⚠ md5 selftest</td><td><b>BROKEN: ${ya.md5_selftest}</b></td></tr>`
+        }
+        const yj1 = ya.webgl_j1, yj2 = ya.webgl_j2, ya5 = ya.webglRender_a5;
+        str += `<tr><td>a5: rotating-triangle render md5</td><td>${ya5 ? `<b>${ya5.md5}</b> (dataURL ${ya5.dataURL_len} B)` : JSON.stringify(ya5)}</td></tr>`
+        if (yj1 && typeof yj1 === 'object') {
+          for (let [k, v] of Object.entries(yj1)) {
+            str += `<tr><td>j1.${k}</td><td>${JSON.stringify(v)}</td></tr>`
+          }
+        } else {
+          str += `<tr><td>j1</td><td>${JSON.stringify(yj1)} (-1 = no context, -2 = no getParameter)</td></tr>`
+        }
+        if (yj2 && typeof yj2 === 'object') {
+          str += `<tr><td>j2.cA: context attributes (${(yj2.cA || []).length})</td><td>${(yj2.cA || []).join(' · ')}</td></tr>`
+          str += details(`j2.p: context constants + getParameter (${(yj2.p || []).length}, sorted)`,
+            (yj2.p || []).map((s, i) => `<tr><td>[${i}] ${s}</td></tr>`).join(''))
+          str += details(`j2.sP: shader precision matrix (${(yj2.sP || []).length}) — rangeMin,rangeMax,precision`,
+            (yj2.sP || []).map(s => `<tr><td>${s}</td></tr>`).join(''))
+          str += details(`j2.e: supported extensions (${(yj2.e || []).length})`,
+            (yj2.e || []).map((s, i) => `<tr><td>[${i}] ${s}</td></tr>`).join(''))
+          str += details(`j2.eP: extension constants + getParameter (${(yj2.eP || []).length}, sorted)`,
+            (yj2.eP || []).map((s, i) => `<tr><td>[${i}] ${s}</td></tr>`).join(''))
+        } else {
+          str += `<tr><td>j2</td><td>${JSON.stringify(yj2)} (-1 = no context, -2 = no getParameter)</td></tr>`
+        }
+
+        str += `<tr><td colspan=2 style="padding-top:8px"><b>media queries (m1,o3,o4,o8,o9,p1,p2,p5,p6,k7)</b></td></tr>`
+        for (let [k, v] of Object.entries(ya.mediaQueries || {})) {
+          str += `<tr><td>${k}</td><td>${JSON.stringify(v)}</td></tr>`
+        }
+
+        str += `<tr><td colspan=2 style="padding-top:8px"><b>o7: font-preferences / text-block metrics (per CSS keyword)</b></td></tr>`
+        for (let [k, v] of Object.entries(ya.fontPrefs_o7 || {})) {
+          str += `<tr><td>o7.${k}</td><td>${JSON.stringify(v)}</td></tr>`
+        }
+
+        const k4 = ya.fonts_k4 || {};
+        const k4bsz = ["monospace", "sans-serif", "serif"]
+          .map(b => `${b} ${(k4.baseW || {})[b]}×${(k4.baseH || {})[b]}`).join(' · ');
+        str += `<tr><td colspan=2 style="padding-top:8px"><b>k4: fonts (FingerprintJS)</b></td></tr>`;
+        str += `<tr><td><b>k4 → отправляется на сервер</b> (detected, ${(k4.detected || []).length})</td><td>${(k4.detected || []).join(", ") || "—"}</td></tr>`;
+        str += details(
+          `k4: полная таблица — baseline ${k4bsz}`,
+          (k4.all || []).map(r => {
+            // совпадение с baseline (сработал фолбэк) красим приглушённым; отличия остаются
+            // цветом по умолчанию и потому бросаются в глаза (= шрифт присутствует)
+            const cells = Object.entries(r.per || {}).map(([b, m]) => {
+              const match = m[0] === (k4.baseW || {})[b] && m[1] === (k4.baseH || {})[b];
+              const t = `${b} ${m[0]}×${m[1]}`;
+              return match ? `<span style="color:#8a94a6">${t}</span>` : t;
+            }).join(' · ');
+            return `<tr><td>${r.present ? '✓ ' : ''}${r.font}</td><td>${r.present ? '<b>PRESENT</b>' : 'absent'} — ${cells}</td></tr>`;
+          }).join('')
+        );
+
+        str += `<tr><td colspan=2 style="padding-top:8px"><b>n5: video codecs (canPlayType, verbatim set)</b></td></tr>`
+        for (let [k, v] of Object.entries(ya.video_n5 || {})) {
+          str += `<tr><td>n5.${k}</td><td>${JSON.stringify(v)}</td></tr>`
+        }
+
+        str += `<tr><td colspan=2 style="padding-top:8px"><b>r1: audio codecs (canPlayType, verbatim set)</b></td></tr>`
+        for (let [k, v] of Object.entries(ya.audio_r1 || {})) {
+          str += `<tr><td>r1.${k}</td><td>${JSON.stringify(v)}</td></tr>`
+        }
+
+        const metrikaCodecs = Array.isArray(ya.metrika_codecs) ? ya.metrika_codecs : [];
+        str += details(
+          `Metrika fip: video.canPlayType() matrix (${metrikaCodecs.length} probes)`,
+          metrikaCodecs.map((probe, i) =>
+            `<tr><td>[${i}] ${probe.type}</td><td>${JSON.stringify(probe.value)}</td></tr>`
+          ).join('')
+        );
+
+        str += `<tr><td>a1: audio FP (loopback OfflineAudioContext, ya-verbatim)</td><td>${JSON.stringify(ya.audio_a1)}</td></tr>`
+        str += `<tr><td>a4: performance.now timer resolution (min/max delta, 50k iters)</td><td>${JSON.stringify(ya.perfTimer_a4)}</td></tr>`
+        str += `<tr><td>o2: Float32 Infinity−Infinity byte[3] (NaN encoding)</td><td>${JSON.stringify(ya.float32_o2)}</td></tr>`
+
+        str += `<tr><td colspan=2 style="padding-top:8px"><b>a3: Math transcendental fingerprint</b></td></tr>`
+        for (let [k, v] of Object.entries(ya.math_a3 || {})) {
+          str += `<tr><td>a3.${k}</td><td>${JSON.stringify(v)}</td></tr>`
         }
 
         str += th(`requestAnimationFrame FPS: ${fp.fps?.avgFps}`)
@@ -2045,248 +2914,6 @@
           hash: hashMini(pixels.toBase64()),
         };
       }
-
-        function hashBytes(bytes) {
-          let hash = 0x811c9dc5;
-          for (let i = 0; i < bytes.length; i++) {
-            hash ^= bytes[i];
-            hash = Math.imul(hash, 0x01000193);
-          }
-          return (hash >>> 0).toString(16).padStart(8, '0');
-        }
-
-        function collectCanvas2dHash() {
-          try {
-            const canvas = document.createElement('canvas');
-            canvas.width = 192;
-            canvas.height = 128;
-            const ctx = canvas.getContext('2d', { willReadFrequently: false }); // true probably force soft raster
-            if (!ctx) return null;
-
-            ctx.fillStyle = '#101418';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-            gradient.addColorStop(0, '#ff6b6b');
-            gradient.addColorStop(0.37, '#feca57');
-            gradient.addColorStop(0.63, '#48dbfb');
-            gradient.addColorStop(1, '#5f27cd');
-            ctx.fillStyle = gradient;
-            ctx.fillRect(8, 8, 112, 112);
-
-            ctx.globalCompositeOperation = 'multiply';
-            ctx.fillStyle = 'rgba(20, 20, 20, 0.45)';
-            ctx.beginPath();
-            ctx.arc(44, 48, 24, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(84, 78, 28, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.globalCompositeOperation = 'source-over';
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(10, 118);
-            ctx.bezierCurveTo(28, 18, 100, 18, 118, 118);
-            ctx.stroke();
-
-            ctx.save();
-            ctx.translate(64, 64);
-            ctx.rotate(Math.PI / 7);
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
-            ctx.fillRect(-22, -22, 44, 44);
-            ctx.restore();
-
-            ctx.globalCompositeOperation = 'source-over';
-            ctx.fillStyle = '#ffffff';
-            ctx.textBaseline = 'alphabetic';
-
-            ctx.font = '15px sans-serif';
-            ctx.fillText('fp:sans-serif:wmMWil1O0@#', 10, 28);
-
-            ctx.font = '15px serif';
-            ctx.fillText('fp:serif:wmMWil1O0@#', 10, 52);
-
-            ctx.font = '15px monospace';
-            ctx.fillText('fp:monospace:wmMWil1O0@#', 10, 76);
-
-            ctx.strokeStyle = 'rgba(255,255,255,0.65)';
-            ctx.strokeRect(126.5, 14.5, 52, 52);
-            ctx.beginPath();
-            ctx.moveTo(126, 14);
-            ctx.lineTo(178, 66);
-            ctx.moveTo(178, 14);
-            ctx.lineTo(126, 66);
-            ctx.stroke();
-
-            const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-            return hashBytes(data);
-          } catch (e) {
-            return null;
-          }
-        }
-
-        function collectCanvas3dHash() {
-          try {
-            const canvas = document.createElement('canvas');
-            canvas.width = 96;
-            canvas.height = 96;
-            const gl = canvas.getContext('webgl2', {
-              alpha: false,
-              antialias: false,
-              depth: false,
-              stencil: false,
-              preserveDrawingBuffer: true,
-            }) || canvas.getContext('webgl', {
-              alpha: false,
-              antialias: false,
-              depth: false,
-              stencil: false,
-              preserveDrawingBuffer: true,
-            });
-            if (!gl) return null;
-
-            const isWebGL2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext;
-            const compileShader = (type, source) => {
-              const shader = gl.createShader(type);
-              gl.shaderSource(shader, source);
-              gl.compileShader(shader);
-              if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-                const info = gl.getShaderInfoLog(shader);
-                gl.deleteShader(shader);
-                throw new Error(info || 'shader compile failed');
-              }
-              return shader;
-            };
-
-            const vertexSource = isWebGL2
-              ? `#version 300 es
-precision highp float;
-in vec2 a_position;
-out vec2 v_uv;
-void main() {
-  v_uv = (a_position + 1.0) * 0.5;
-  gl_Position = vec4(a_position, 0.0, 1.0);
-}`
-              : `precision highp float;
-attribute vec2 a_position;
-varying vec2 v_uv;
-void main() {
-  v_uv = (a_position + 1.0) * 0.5;
-  gl_Position = vec4(a_position, 0.0, 1.0);
-}`;
-
-            const fragmentSource = isWebGL2
-              ? `#version 300 es
-precision highp float;
-in vec2 v_uv;
-out vec4 outColor;
-void main() {
-  vec2 p = v_uv * 2.0 - 1.0;
-  float radius = length(p);
-  float wave = 0.5 + 0.5 * sin(p.x * 23.0 + p.y * 17.0);
-  float ring = smoothstep(0.78, 0.76, radius);
-  outColor = vec4(v_uv.x, wave, ring * (0.7 + 0.3 * cos(radius * 31.0)), 1.0);
-}`
-              : `precision highp float;
-varying vec2 v_uv;
-void main() {
-  vec2 p = v_uv * 2.0 - 1.0;
-  float radius = length(p);
-  float wave = 0.5 + 0.5 * sin(p.x * 23.0 + p.y * 17.0);
-  float ring = smoothstep(0.78, 0.76, radius);
-  gl_FragColor = vec4(v_uv.x, wave, ring * (0.7 + 0.3 * cos(radius * 31.0)), 1.0);
-}`;
-
-            const program = gl.createProgram();
-            const vs = compileShader(gl.VERTEX_SHADER, vertexSource);
-            const fs = compileShader(gl.FRAGMENT_SHADER, fragmentSource);
-            gl.attachShader(program, vs);
-            gl.attachShader(program, fs);
-            gl.linkProgram(program);
-            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-              throw new Error(gl.getProgramInfoLog(program) || 'program link failed');
-            }
-
-            gl.useProgram(program);
-            const positionLoc = gl.getAttribLocation(program, 'a_position');
-            const buffer = gl.createBuffer();
-            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-              -1, -1,
-               1, -1,
-              -1,  1,
-               1,  1,
-            ]), gl.STATIC_DRAW);
-            gl.enableVertexAttribArray(positionLoc);
-            gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
-
-            gl.viewport(0, 0, canvas.width, canvas.height);
-            gl.clearColor(0.03, 0.04, 0.05, 1);
-            gl.clear(gl.COLOR_BUFFER_BIT);
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-            const pixels = new Uint8Array(canvas.width * canvas.height * 4);
-            gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-
-            gl.deleteBuffer(buffer);
-            gl.deleteShader(vs);
-            gl.deleteShader(fs);
-            gl.deleteProgram(program);
-
-            return hashBytes(pixels);
-          } catch (e) {
-            return null;
-          }
-        }
-
-        // dumped from ya smartcaptcha
-        function collectCanvas2d_fjordbank() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 240;
-            canvas.height = 140;
-
-            const ctx = canvas.getContext("2d", { willReadFrequently: false });
-
-            ctx.rect(0, 0, 10, 10);
-            ctx.rect(2, 2, 6, 6);
-            ctx.textBaseline = "alphabetic";
-            ctx.fillStyle = "#f60";
-            ctx.fillRect(125, 1, 62, 20);
-            ctx.fillStyle = "#069";
-            ctx.font = "11pt no-real-font-123";
-            ctx.fillText("Cwm fjordbank 😃 gly", 2, 15);
-            ctx.fillStyle = "rgba(102, 204, 0, 0.2)";
-            ctx.font = "18pt Arial";
-            ctx.fillText("Cwm fjordbank 😃 gly", 4, 45);
-            ctx.globalCompositeOperation = "multiply";
-            ctx.fillStyle = "rgb(255,0,255)";
-            ctx.beginPath();
-            ctx.arc(50, 50, 50, 0, 6.28319, true);
-            ctx.closePath();
-            ctx.fill();
-            ctx.fillStyle = "rgb(0,255,255)";
-            ctx.beginPath();
-            ctx.arc(100, 50, 50, 0, 6.28319, true);
-            ctx.closePath();
-            ctx.fill();
-            ctx.fillStyle = "rgb(255,255,0)";
-            ctx.beginPath();
-            ctx.arc(75, 100, 50, 0, 6.28319, true);
-            ctx.closePath();
-            ctx.fill();
-            ctx.fillStyle = "rgb(255,0,255)";
-            ctx.arc(75, 75, 75, 0, 6.28319, true);
-            ctx.arc(75, 75, 25, 0, 6.28319, true);
-            ctx.fill("evenodd");
-
-	    const dataurl = canvas.toDataURL('image/png');
-            return {
-              hash: hashMini(dataurl),
-              dataurl: dataurl,
-            };
-        }
 
     </script>
   </head>
