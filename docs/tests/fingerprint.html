@@ -584,8 +584,18 @@ void main() {
           return { detected, all, baseW, baseH };
         }
 
-        function ya_o7_fontPrefs() {
-          // ya o7: text-block metrics per CSS system-font keyword (default-font tell)
+        async function ya_o7_fontPrefs() {
+          // ya o7: FingerprintJS fontPreferences, verbatim.
+          //
+          // The measurement happens inside a fresh IFRAME, not in this document:
+          //   doc = "<!doctype html><html><head><meta name=viewport content=...>"
+          //   body.width = 4000px, textSizeAdjust = none,
+          //   body.zoom = 1/devicePixelRatio   (Chromium branch, g7() is true here)
+          //   filler div of (4000/20) "word"s, then <br> + span per preset.
+          // Only getBoundingClientRect().width is sent -- no height.
+          //
+          // Measuring in the host document instead changes every number, because the
+          // page's own styles and the missing zoom both feed into the result.
           const presets = {
             default: {}, apple: { font: "-apple-system-body" },
             serif: { fontFamily: "serif" }, sans: { fontFamily: "sans-serif" },
@@ -593,23 +603,53 @@ void main() {
             system: { fontFamily: "system-ui" },
           };
           const fallback = "mmMwWLliI0fiflO&1";
-          const box = document.createElement("div");
-          box.style.cssText = "position:absolute;left:-9999px;width:4000px;-webkit-text-size-adjust:none;text-size-adjust:none;";
-          document.body.appendChild(box);
-          const out = {};
-          for (const [name, style] of Object.entries(presets)) {
-            const span = document.createElement("span");
-            span.style.whiteSpace = "nowrap";
-            if (style.font) span.style.font = style.font;
-            if (style.fontFamily) span.style.fontFamily = style.fontFamily;
-            if (style.fontSize) span.style.fontSize = style.fontSize;
-            span.textContent = fallback;
-            box.appendChild(span);
-            const r = span.getBoundingClientRect();
-            out[name] = { w: +r.width.toFixed(2), h: +r.height.toFixed(2) };
+          const WIDTH = 4000;
+
+          const iframe = document.createElement("iframe");
+          iframe.style.cssText = "position:absolute;top:0;left:0;visibility:hidden;border:0;";
+          iframe.src = "about:blank";
+          document.body.appendChild(iframe);
+          try {
+            await new Promise((resolve) => {
+              if (iframe.contentDocument && iframe.contentDocument.readyState === "complete") resolve();
+              else iframe.addEventListener("load", () => resolve(), { once: true });
+              setTimeout(resolve, 1000);
+            });
+            const win = iframe.contentWindow;
+            const doc = iframe.contentDocument;
+            doc.open();
+            doc.write('<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">');
+            doc.close();
+
+            const body = doc.body;
+            body.style.width = WIDTH + "px";
+            body.style.webkitTextSizeAdjust = body.style.textSizeAdjust = "none";
+            body.style.zoom = String(1 / win.devicePixelRatio);
+
+            const filler = doc.createElement("div");
+            filler.textContent = [...Array((WIDTH / 20) | 0)].map(() => "word").join(" ");
+            body.appendChild(filler);
+
+            const spans = {};
+            for (const [name, style] of Object.entries(presets)) {
+              const span = doc.createElement("span");
+              span.textContent = fallback;
+              span.style.whiteSpace = "nowrap";
+              if (style.font) span.style.font = style.font;
+              if (style.fontFamily) span.style.fontFamily = style.fontFamily;
+              if (style.fontSize) span.style.fontSize = style.fontSize;
+              spans[name] = span;
+              body.append(doc.createElement("br"), span);
+            }
+
+            const out = {};
+            for (const name of Object.keys(presets)) {
+              out[name] = spans[name].getBoundingClientRect().width;
+            }
+            return out;
+          } finally {
+            document.body.removeChild(iframe);
           }
-          document.body.removeChild(box);
-          return out;
         }
 
         async function ya_m4_widevine() {
@@ -1032,7 +1072,7 @@ void main() {
           try {
             return {
               fonts_k4: ya_k4_fonts(),
-              fontPrefs_o7: ya_o7_fontPrefs(),
+              fontPrefs_o7: await ya_o7_fontPrefs(),
               widevine_m4: await ya_m4_widevine(),
               mediaQueries: ya_mediaQueries(),
               video_n5: ya_n5_video(),
