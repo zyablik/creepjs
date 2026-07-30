@@ -90,9 +90,10 @@
         }
 
 
-        function collectCanvas2dHash() {
+        // Pass a canvas from the DOM to render into it -- the page's self-check widget
+        // does that so the drawing is visible; the collector itself works off-screen.
+        function collectCanvas2dHash(canvas = document.createElement('canvas')) {
           try {
-            const canvas = document.createElement('canvas');
             canvas.width = 192;
             canvas.height = 128;
             const ctx = canvas.getContext('2d', { willReadFrequently: false }); // true probably force soft raster
@@ -162,9 +163,9 @@
           }
         }
 
-        function collectCanvas3dHash() {
+        // Same optional-canvas trick as collectCanvas2dHash above.
+        function collectCanvas3dHash(canvas = document.createElement('canvas')) {
           try {
-            const canvas = document.createElement('canvas');
             canvas.width = 96;
             canvas.height = 96;
             const gl = canvas.getContext('webgl2', {
@@ -276,12 +277,9 @@ void main() {
           }
         }
 
-        // dumped from ya smartcaptcha
-        function collectCanvas2d_fjordbank() {
-            // ya smartcaptcha per-factor timer: Math.round(performance.now()*100)/100 (0.01ms),
-            // start/end wrap the whole collect (create canvas -> render -> toDataURL).
-            const ya_t = () => Math.round(performance.now() * 100) / 100;
-            const start = ya_t();
+        // dumped from ya smartcaptcha tmgrdfrend.js (a2)
+        function ya_tmgrdfrend_2d_fjordbank() {
+            const start = performance.now();
 
             const canvas = document.createElement('canvas');
             canvas.width = 240;
@@ -303,33 +301,174 @@ void main() {
             ctx.globalCompositeOperation = "multiply";
             ctx.fillStyle = "rgb(255,0,255)";
             ctx.beginPath();
-            ctx.arc(50, 50, 50, 0, 6.28319, true);
+            ctx.arc(50, 50, 50, 0, Math.PI * 2, true);
             ctx.closePath();
             ctx.fill();
             ctx.fillStyle = "rgb(0,255,255)";
             ctx.beginPath();
-            ctx.arc(100, 50, 50, 0, 6.28319, true);
+            ctx.arc(100, 50, 50, 0, Math.PI * 2, true);
             ctx.closePath();
             ctx.fill();
             ctx.fillStyle = "rgb(255,255,0)";
             ctx.beginPath();
-            ctx.arc(75, 100, 50, 0, 6.28319, true);
+            ctx.arc(75, 100, 50, 0, Math.PI * 2, true);
             ctx.closePath();
             ctx.fill();
             ctx.fillStyle = "rgb(255,0,255)";
-            ctx.arc(75, 75, 75, 0, 6.28319, true);
-            ctx.arc(75, 75, 25, 0, 6.28319, true);
+            ctx.arc(75, 75, 75, 0, Math.PI * 2, true);
+            ctx.arc(75, 75, 25, 0, Math.PI * 2, true);
             ctx.fill("evenodd");
 
 	    const dataurl = canvas.toDataURL('image/png');
-            const end = ya_t();
             return {
-              hash: hashMini(dataurl),
+              hash: ya_md5(dataurl),
               dataurl: dataurl,
-              start: start,
-              end: end,
-              calcTime: Math.round((end - start) * 100) / 100,  // ya-style render time (ms)
+              duration: Math.round((performance.now() - start) * 100) / 100,  // ms
             };
+        }
+
+        // dumped from ya smartcaptcha tmgrdfrend.js (a5)
+        //
+        // a5 builds its OWN canvas and context instead of reusing the A4 cache that
+        // j1/j2 share -- it has to, since the draw dirties state that j2 reads back
+        // through getParameter (COLOR_CLEAR_VALUE, CURRENT_PROGRAM, buffer bindings).
+        function ya_tmgrdfrend_3d_triangle() {
+            const start = performance.now();
+
+            let gl;
+            {
+              const cv = document.createElement("canvas");
+              cv.addEventListener("webglCreateContextError", () => { gl = undefined; });
+              for (const name of ["webgl", "experimental-webgl"]) {
+                try { gl = cv.getContext(name); } catch (e) {}
+                if (gl) break;
+              }
+            }
+            const prog = gl == null ? undefined : gl.createProgram();
+            if (!gl || !prog) {
+              return { hash: null, dataurl: null, duration: Math.round((performance.now() - start) * 100) / 100 };
+            }
+            const addShader = (offset, src) => {
+              const sh = gl.createShader(35633 - offset);
+              if (prog && sh) { gl.shaderSource(sh, src); gl.compileShader(sh); gl.attachShader(prog, sh); }
+            };
+            gl.clearColor(0, 0, 1, 1);
+            addShader(0, "attribute vec2 p;uniform float t;void main(){float s=sin(t);float c=cos(t);gl_Position=vec4(p*mat2(c,s,-s,c),1,1);}");
+            addShader(1, "void main(){gl_FragColor=vec4(1,0,0,1);}");
+            gl.linkProgram(prog);
+            gl.useProgram(prog);
+            gl.enableVertexAttribArray(0);
+            const t = gl.getUniformLocation(prog, "t");
+            const buf = gl.createBuffer();
+            gl.bindBuffer(34962, buf);
+            gl.bufferData(34962, new Float32Array([0, 1, -1, -1, 1, -1]), 35044);
+            gl.vertexAttribPointer(0, 2, 5126, false, 0, 0);
+            gl.clear(16384);
+            gl.uniform1f(t, 3.65);
+            gl.drawArrays(4, 0, 3);
+            const dataurl = gl.canvas.toDataURL();
+            return {
+              hash: ya_md5(dataurl),   // ya a5 = SparkMD5(toDataURL), lowercase hex
+              dataurl: dataurl,
+              duration: Math.round((performance.now() - start) * 100) / 100,  // ms
+            };
+        }
+
+        // ==== ya smartcaptcha (captcha_smart) — Picasso seeded canvas fingerprint ====
+        // Verbatim port of the challenge renderer: oC (Park-Miller PRNG), oj (5 shapes),
+        // oz (render loop) + murmurhash3_x64_128. The server delivers a fresh pair
+        // pic:[s0,s1]; each seed drives one 300x300 painting and is ALSO the hash seed.
+        // Per image the captcha packs { seed, result, calcTime } into its `picasso` field.
+        function ya_picasso(seeds) {
+          // oC: Park-Miller minimal-standard LCG
+          function PRNG(seed) { this._seed = seed % 2147483647; if (this._seed <= 0) this._seed += 2147483646; }
+          PRNG.prototype.random = function () { this._seed = this._seed * 16807 % 2147483647; return this._seed / 2147483647; };
+          PRNG.prototype.randomFloat = function (a, b) { if (b === undefined) return this.random() * a; if (b < a) throw Error("b should be greater than a"); return (b - a) * this.random() + a; };
+          PRNG.prototype.randomInt = function (a, b) { return Math.floor(this.randomFloat(a, b)); };
+          PRNG.prototype.randomColor = function () { var t = "#"; for (var e = 0; e < 3; e++) { var r = this.randomInt(0, 256).toString(16); t += r.length === 1 ? "0" + r : r; } return t; };
+
+          // oj: the 5 shape primitives (t=prng, e=ctx, r=config)
+          var SHAPES = [
+            function (t, e, r) { e.beginPath(); e.arc(t.randomInt(r.width), t.randomInt(r.height), t.randomInt(Math.min(r.width, r.height)), t.randomFloat(Math.PI * 2), t.randomFloat(Math.PI * 2)); e.stroke(); e.fill(); },
+            function (t, e, r) { var n = Math.max(1, t.randomInt(5)); var i = (function (t, e) { var r = []; for (var n = 0; n < e; n++) r.push(String.fromCharCode(t.randomInt(65, 126))); return r.join(""); })(t, n); e.font = r.height / r.fontSizeFactor + "px aafakefontaa"; e.strokeText(i, t.randomInt(r.width), t.randomInt(r.height), t.randomInt(r.width)); e.fill(); },
+            function (t, e, r) { e.beginPath(); e.moveTo(t.randomInt(r.width), t.randomInt(r.height)); e.bezierCurveTo(t.randomInt(r.width), t.randomInt(r.height), t.randomInt(r.width), t.randomInt(r.height), t.randomInt(r.width), t.randomInt(r.height)); e.stroke(); e.fill(); },
+            function (t, e, r) { e.beginPath(); e.moveTo(t.randomInt(r.width), t.randomInt(r.height)); e.quadraticCurveTo(t.randomInt(r.width), t.randomInt(r.height), t.randomInt(r.width), t.randomInt(r.height)); e.stroke(); e.fill(); },
+            function (t, e, r) { e.beginPath(); e.save(); e.translate(t.randomInt(r.width), t.randomInt(r.height)); e.rotate(t.randomFloat(Math.PI * 2)); e.scale(t.randomInt(Math.floor(r.width / 2)), t.randomInt(Math.floor(r.height / 2))); e.arc(0, 0, 1, t.randomFloat(Math.PI * 2), t.randomFloat(Math.PI * 2)); e.restore(); e.stroke(); e.fill(); }
+          ];
+
+          // murmurhash3 x64 128-bit (verbatim helpers oP/oT/oA/oR/oI/oM + digest)
+          var add64 = function (t, e) { t = [t[0] >>> 16, t[0] & 65535, t[1] >>> 16, t[1] & 65535]; e = [e[0] >>> 16, e[0] & 65535, e[1] >>> 16, e[1] & 65535]; var r = [0, 0, 0, 0]; r[3] += t[3] + e[3]; r[2] += r[3] >>> 16; r[3] &= 65535; r[2] += t[2] + e[2]; r[1] += r[2] >>> 16; r[2] &= 65535; r[1] += t[1] + e[1]; r[0] += r[1] >>> 16; r[1] &= 65535; r[0] += t[0] + e[0]; r[0] &= 65535; return [r[0] << 16 | r[1], r[2] << 16 | r[3]]; };
+          var mul64 = function (t, e) { t = [t[0] >>> 16, t[0] & 65535, t[1] >>> 16, t[1] & 65535]; e = [e[0] >>> 16, e[0] & 65535, e[1] >>> 16, e[1] & 65535]; var r = [0, 0, 0, 0]; r[3] += t[3] * e[3]; r[2] += r[3] >>> 16; r[3] &= 65535; r[2] += t[2] * e[3]; r[1] += r[2] >>> 16; r[2] &= 65535; r[2] += t[3] * e[2]; r[1] += r[2] >>> 16; r[2] &= 65535; r[1] += t[1] * e[3]; r[0] += r[1] >>> 16; r[1] &= 65535; r[1] += t[2] * e[2]; r[0] += r[1] >>> 16; r[1] &= 65535; r[1] += t[3] * e[1]; r[0] += r[1] >>> 16; r[1] &= 65535; r[0] += t[0] * e[3] + t[1] * e[2] + t[2] * e[1] + t[3] * e[0]; r[0] &= 65535; return [r[0] << 16 | r[1], r[2] << 16 | r[3]]; };
+          var rotl64 = function (t, e) { e %= 64; if (e === 32) return [t[1], t[0]]; if (e < 32) return [t[0] << e | t[1] >>> 32 - e, t[1] << e | t[0] >>> 32 - e]; e -= 32; return [t[1] << e | t[0] >>> 32 - e, t[0] << e | t[1] >>> 32 - e]; };
+          var shl64 = function (t, e) { e %= 64; if (e === 0) return t; if (e < 32) return [t[0] << e | t[1] >>> 32 - e, t[1] << e]; return [t[1] << e - 32, 0]; };
+          var xor64 = function (t, e) { return [t[0] ^ e[0], t[1] ^ e[1]]; };
+          var fmix64 = function (t) { t = mul64(t = xor64(t, [0, t[0] >>> 1]), [4283543511, 3981806797]); t = mul64(t = xor64(t, [0, t[0] >>> 1]), [3301882366, 444984403]); return xor64(t, [0, t[0] >>> 1]); };
+          function murmur128(t, e) {
+            e = e || 0;
+            var r, n, i = (t = t || "").length % 16, o = t.length - i, a = [0, e], s = [0, e], c = [2277735313, 289559509], u = [1291169091, 658871167], l = 0;
+            for (l = 0; l < o; l += 16) {
+              r = [t.charCodeAt(l + 4) & 255 | (t.charCodeAt(l + 5) & 255) << 8 | (t.charCodeAt(l + 6) & 255) << 16 | (t.charCodeAt(l + 7) & 255) << 24, t.charCodeAt(l) & 255 | (t.charCodeAt(l + 1) & 255) << 8 | (t.charCodeAt(l + 2) & 255) << 16 | (t.charCodeAt(l + 3) & 255) << 24];
+              n = [t.charCodeAt(l + 12) & 255 | (t.charCodeAt(l + 13) & 255) << 8 | (t.charCodeAt(l + 14) & 255) << 16 | (t.charCodeAt(l + 15) & 255) << 24, t.charCodeAt(l + 8) & 255 | (t.charCodeAt(l + 9) & 255) << 8 | (t.charCodeAt(l + 10) & 255) << 16 | (t.charCodeAt(l + 11) & 255) << 24];
+              r = rotl64(r = mul64(r, c), 31); a = add64(a = rotl64(a = xor64(a, r = mul64(r, u)), 27), s); a = add64(mul64(a, [0, 5]), [0, 1390208809]);
+              n = rotl64(n = mul64(n, u), 33); s = add64(s = rotl64(s = xor64(s, n = mul64(n, c)), 31), a); s = add64(mul64(s, [0, 5]), [0, 944331445]);
+            }
+            r = [0, 0]; n = [0, 0];
+            switch (i) { // intentional fall-through (murmur tail)
+              case 15: n = xor64(n, shl64([0, t.charCodeAt(l + 14)], 48));
+              case 14: n = xor64(n, shl64([0, t.charCodeAt(l + 13)], 40));
+              case 13: n = xor64(n, shl64([0, t.charCodeAt(l + 12)], 32));
+              case 12: n = xor64(n, shl64([0, t.charCodeAt(l + 11)], 24));
+              case 11: n = xor64(n, shl64([0, t.charCodeAt(l + 10)], 16));
+              case 10: n = xor64(n, shl64([0, t.charCodeAt(l + 9)], 8));
+              case 9: n = rotl64(n = mul64(n = xor64(n, [0, t.charCodeAt(l + 8)]), u), 33); s = xor64(s, n = mul64(n, c));
+              case 8: r = xor64(r, shl64([0, t.charCodeAt(l + 7)], 56));
+              case 7: r = xor64(r, shl64([0, t.charCodeAt(l + 6)], 48));
+              case 6: r = xor64(r, shl64([0, t.charCodeAt(l + 5)], 40));
+              case 5: r = xor64(r, shl64([0, t.charCodeAt(l + 4)], 32));
+              case 4: r = xor64(r, shl64([0, t.charCodeAt(l + 3)], 24));
+              case 3: r = xor64(r, shl64([0, t.charCodeAt(l + 2)], 16));
+              case 2: r = xor64(r, shl64([0, t.charCodeAt(l + 1)], 8));
+              case 1: r = rotl64(r = mul64(r = xor64(r, [0, t.charCodeAt(l)]), c), 31); a = xor64(a, r = mul64(r, u));
+            }
+            a = add64(a = xor64(a, [0, t.length]), s = xor64(s, [0, t.length])); s = add64(s, a);
+            a = add64(a = fmix64(a), s = fmix64(s)); s = add64(s, a);
+            return ("00000000" + (a[0] >>> 0).toString(16)).slice(-8) + ("00000000" + (a[1] >>> 0).toString(16)).slice(-8) + ("00000000" + (s[0] >>> 0).toString(16)).slice(-8) + ("00000000" + (s[1] >>> 0).toString(16)).slice(-8);
+          }
+
+          // oz: render one seeded image, hash it with its own seed, time the whole thing
+          function renderOne(cfg) {
+            var start = Date.now();
+            var s = new PRNG(cfg.seed);
+            var c = document.createElement("canvas");
+            c.width = cfg.width; c.height = cfg.height; c.style.display = "none";
+            var ctx = c.getContext("2d");
+            if (ctx === null) throw Error("ctx is null");
+            for (var l = 0; l < cfg.rounds; l++) {
+              var g = ctx.createRadialGradient(s.randomInt(cfg.width), s.randomInt(cfg.height), s.randomInt(cfg.width), s.randomInt(cfg.width), s.randomInt(cfg.height), s.randomInt(cfg.width));
+              g.addColorStop(0, s.randomColor());
+              g.addColorStop(1, s.randomColor());
+              ctx.fillStyle = g;
+              ctx.shadowBlur = s.randomInt(cfg.maxShadowBlur);
+              ctx.shadowColor = s.randomColor();
+              SHAPES[s.randomInt(0, SHAPES.length)](s, ctx, cfg);
+            }
+            document.documentElement.appendChild(c);
+            var dataurl = c.toDataURL();
+            var result = murmur128(dataurl, cfg.seed);  // seed is also the hash seed
+            var calcTime = Date.now() - start;
+            c.remove();
+            // dataurl is ours, not part of what the captcha packs -- kept for the table
+            return { seed: cfg.seed, result: result, calcTime: calcTime, dataurl: dataurl };
+          }
+
+          // seed[0] -> light 5-round image, seed[1] -> heavy 10-round image (verbatim configs)
+          var CONFIGS = [
+            { rounds: 5, width: 300, height: 300, fontSizeFactor: 1.5, maxShadowBlur: 50 },
+            { rounds: 10, width: 300, height: 300, fontSizeFactor: 2, maxShadowBlur: 70 },
+          ];
+          return seeds.map(function (seed, i) {
+            return renderOne(Object.assign({}, CONFIGS[i], { seed: seed }));
+          });
         }
 
         async function checkOfflineAudioContext() {
@@ -1023,49 +1162,31 @@ void main() {
           return { cA, p, sP, e, eP };
         }
 
-        function ya_a5_webglHash() {
-          // ya a5: rotating-triangle WebGL1 render -> md5(canvas.toDataURL()).
-          // Verbatim: default 300x150 canvas, clearColor(0,0,1,1), t=3.65,
-          // TRIANGLE_FAN over [0,1, -1,-1, 1,-1], red fragment on blue clear.
-          //
-          // a5 builds its OWN canvas and context instead of reusing the A4 cache that
-          // j1/j2 share -- it has to, since the draw dirties state that j2 reads back
-          // through getParameter (COLOR_CLEAR_VALUE, CURRENT_PROGRAM, buffer bindings).
-          let gl;
-          {
-            const cv = document.createElement("canvas");
-            cv.addEventListener("webglCreateContextError", () => { gl = undefined; });
-            for (const name of ["webgl", "experimental-webgl"]) {
-              try { gl = cv.getContext(name); } catch (e) {}
-              if (gl) break;
-            }
+        async function collectWindowKeys() {
+          // Read the global names from a fresh same-origin about:blank iframe rather than
+          // from this window. Anything the hosting page defines -- analytics, framework
+          // runtimes, the collector's own helpers -- otherwise lands in the list and makes
+          // it describe the page instead of the browser. Measured on a real device: the
+          // top window carried 7 extra names over the iframe and the iframe carried none
+          // over the window, so nothing browser-provided is lost this way.
+          const frame = document.createElement("iframe");
+          frame.style.cssText = "position:absolute;left:-9999px;top:0;width:1px;height:1px;border:0;";
+          frame.src = "about:blank";
+          document.body.appendChild(frame);
+          try {
+            await new Promise((resolve) => {
+              if (frame.contentDocument && frame.contentDocument.readyState === "complete") resolve();
+              else frame.addEventListener("load", () => resolve(), { once: true });
+              setTimeout(resolve, 1000);
+            });
+            const w = frame.contentWindow;
+            if (!w) return Object.getOwnPropertyNames(window);
+            return Object.getOwnPropertyNames(w);
+          } catch (e) {
+            return Object.getOwnPropertyNames(window);
+          } finally {
+            frame.remove();
           }
-          const prog = gl == null ? undefined : gl.createProgram();
-          if (!gl || !prog) return null;
-          const addShader = (offset, src) => {
-            const sh = gl.createShader(35633 - offset);
-            if (prog && sh) {
-              gl.shaderSource(sh, src);
-              gl.compileShader(sh);
-              gl.attachShader(prog, sh);
-            }
-          };
-          gl.clearColor(0, 0, 1, 1);
-          addShader(0, "attribute vec2 p;uniform float t;void main(){float s=sin(t);float c=cos(t);gl_Position=vec4(p*mat2(c,s,-s,c),1,1);}");
-          addShader(1, "void main(){gl_FragColor=vec4(1,0,0,1);}");
-          gl.linkProgram(prog);
-          gl.useProgram(prog);
-          gl.enableVertexAttribArray(0);
-          const t = gl.getUniformLocation(prog, "t");
-          const buf = gl.createBuffer();
-          gl.bindBuffer(34962, buf);
-          gl.bufferData(34962, new Float32Array([0, 1, -1, -1, 1, -1]), 35044);
-          gl.vertexAttribPointer(0, 2, 5126, false, 0, 0);
-          gl.clear(16384);
-          gl.uniform1f(t, 3.65);
-          gl.drawArrays(4, 0, 3);
-          const url = gl.canvas.toDataURL();
-          return { md5: ya_md5(url), dataURL_len: url.length };
         }
 
         async function collectYaProbes() {
@@ -1082,11 +1203,8 @@ void main() {
               perfTimer_a4: ya_a4_perfTimer(),
               float32_o2: ya_o2_float32(),
               audio_a1: await ya_a1_audio(),
-              // j1/j2 read the shared cached context and must run before a5 in source
-              // order only for readability -- a5 uses its own context either way.
               webgl_j1: ya_j1_webgl(),
               webgl_j2: ya_j2_webgl(),
-              webglRender_a5: ya_a5_webglHash(),
               md5_selftest: ya_md5("abc"), // must be 900150983cd24fb0d6963f7d28e17f72
             };
           } catch (e) {
@@ -1211,7 +1329,7 @@ void main() {
               chrome_app: String(window?.chrome?.app),
               window_ontouchstart: String(window.ontouchstart),
               touch_event: hasTouch(),
-              window_keys: Object.getOwnPropertyNames(window),
+              window_keys: await collectWindowKeys(),
               nonNativeFunctions: [],
             },
 
@@ -1233,6 +1351,14 @@ void main() {
               status: "N/A"
             },
 
+            // Every empty object in the collected corpus comes back as [];
+            // these two say where that happens. A stage backed by PHP-style
+            // arrays also renders numeric_keys as ["a","b"].
+            pipeline_probe: {
+              empty_object: {},
+              numeric_keys: { "0": "a", "1": "b" },
+            },
+
             permissions: {},
 
             sensors: {},
@@ -1240,10 +1366,11 @@ void main() {
             fps: null,
 
             canvas2d_hash: null,
-            canvas2d_fjordbank_hash: null,
-            canvas2d_fjordbank_dataurl: null,
-            canvas2d_fjordbank_calcTime: null,  // ya-style render time (ms)
             canvas3d_hash: null,
+
+            // every ya smartcaptcha probe lands here: the two canvas renders
+            // ({ hash, dataurl, duration }), picasso, and all of collectYaProbes()
+            ya: {},
 
             webgl_hash: null,
             webgl_hash_with_model: null,
@@ -1337,10 +1464,12 @@ void main() {
           fp.canvas2d_hash = collectCanvas2dHash();
           fp.canvas3d_hash = collectCanvas3dHash();
 
-          const canvas2d_fjordbank = collectCanvas2d_fjordbank();
-          fp.canvas2d_fjordbank_hash = canvas2d_fjordbank.hash;
-          fp.canvas2d_fjordbank_dataurl = canvas2d_fjordbank.dataurl;
-          fp.canvas2d_fjordbank_calcTime = { calcTime: canvas2d_fjordbank.calcTime, start: canvas2d_fjordbank.start, end: canvas2d_fjordbank.end };
+          fp.ya.tmgrdfrend_2d_fjordbank = ya_tmgrdfrend_2d_fjordbank();
+          fp.ya.tmgrdfrend_3d_triangle = ya_tmgrdfrend_3d_triangle();
+
+          // ya smartcaptcha Picasso — render the captured seed pair (935, 372);
+          // each entry: { seed, result: murmur128(toDataURL, seed), calcTime (ms) }
+          fp.ya.picasso_935_372 = ya_picasso([935, 372]);
 
         // webgl
         let canvas2 = document.createElement("canvas");
@@ -1405,8 +1534,6 @@ void main() {
           let ani_ext = gl1_context.getExtension('EXT_texture_filter_anisotropic')
           if(ani_ext) {
             fp.webgl.parameters.MAX_TEXTURE_MAX_ANISOTROPY_EXT = gl1_context.getParameter(ani_ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT)
-          } else {
-            fp.webgl.parameters.MAX_TEXTURE_MAX_ANISOTROPY_EXT = "N/A"
           }
 
           ["VERTEX_SHADER", "FRAGMENT_SHADER"].forEach(shader_type => {
@@ -1648,68 +1775,85 @@ void main() {
 // <neuroslop>
 
         const detectFontsAndPlatform = async function() {
-          const linuxFonts = [
-            "Ubuntu",
-            "DejaVu Sans",
-            "Liberation Sans",
-            "Liberation Mono",
-          ];
-
-          const androidBaseFonts = [
-            "Roboto",
-            "Noto Sans",
-            "Droid Sans",
-          ];
-
-          const samsungFonts = ["SamsungOne", "Samsung Sans"];
-          const xiaomiFonts = ["MiSans", "MiLanProVF"];
-          const oppoOnePlusFonts = ["OPPO Sans", "OnePlus Sans"];
-          const honorHuaweiFonts = ["HONOR Sans", "Huawei Sans"];
-          const vivoFonts = ["vivo Sans"];
-          const realmeFonts = ["Realme Sans"];
-          const sonyFonts = ["Sony Sketch"];
-          const lgFonts = ["LG Smart UI"];
-          const motorolaFonts = ["Rookery"];
-          const nothingFonts = ["Ndot", "NType 82", "Lettera Mono LL"];
-
-          const androidFonts = [
-            ...androidBaseFonts,
-            ...samsungFonts,
-            ...xiaomiFonts,
-            ...oppoOnePlusFonts,
-            ...honorHuaweiFonts,
-            ...vivoFonts,
-            ...realmeFonts,
-            ...sonyFonts,
-            ...lgFonts,
-            ...motorolaFonts,
-            ...nothingFonts,
-          ];
-
-          const windowsFonts = [
-            "Segoe UI",
-            "Segoe UI Variable",
-            "Calibri",
-            "Cambria",
-            "Consolas",
-          ];
-
-          const iosFonts = [
-            "SF Pro Text",
-            "SF Pro Display",
-            "San Francisco",
-            "Apple SD Gothic Neo",
-          ];
-
-          const baseFonts = ["monospace", "sans-serif", "serif"];
-          const fontList = [...new Set([...linuxFonts, ...androidFonts, ...windowsFonts, ...iosFonts])];
-          const testString = "mmMwWLliI0O&1 ABCXYZ abcxyz 0123456789";
-          const testSize = 72;
-
-          const canvas = document.createElement("canvas");
-          canvas.width = 1200;
-          canvas.height = 180;
-          const ctx = canvas.getContext("2d");
+          // Only FontFace local() sees system fonts on Android. CSS family lookup
+          // resolves nothing but the families declared in /system/etc/fonts.xml, so
+          // measureText/pixel diffing against a generic never fires -- measured on a
+          // real Nothing Phone 2: every vendor face scored metrics=false pixels=false
+          // while local() found it. The canvas branches are gone for that reason.
+          //
+          // local() matches the font's FULL name (nameID 4) and PostScript name (6),
+          // never family (1) or typographic family (16). local("Ndot") and
+          // local("NType 82") therefore MISS, local("Ndot 55") and
+          // local("NType82-Regular") hit. Hence the alias lists below carry the names
+          // the name table actually declares, not the marketing family.
+          //
+          // Android entries are verified on-device; the Windows/iOS/Linux ones are
+          // plain full names and stay unverified until run on such a machine.
+          const FONT_ALIASES = {
+            // AOSP / Android base
+            "Roboto": ["Roboto", "Roboto-Regular"],
+            "Roboto Flex": ["Roboto Flex Regular", "RobotoFlex-Regular"],
+            "Droid Sans Mono": ["Droid Sans Mono", "DroidSansMono"],
+            "Noto Serif": ["Noto Serif", "NotoSerif"],
+            "Noto Color Emoji": ["Noto Color Emoji", "NotoColorEmoji"],
+            "Noto Sans CJK": ["Noto Sans CJK JP Regular", "NotoSansCJKjp-Regular"],
+            "Source Sans Pro": ["Source Sans Pro Regular", "SourceSansPro-Regular"],
+            "Cutive Mono": ["Cutive Mono Regular", "CutiveMono-Regular"],
+            "Dancing Script": ["Dancing Script Regular", "DancingScript-Regular"],
+            "Carrois Gothic SC": ["Carrois Gothic SC Regular", "CarroisGothicSC-Regular"],
+            // vendor skins -- still unverified, so each entry carries all three shapes:
+            // bare family, family + " Regular", and the PostScript spelling. The bare
+            // one only hits when the vendor set full(4) == family(1); on the Razr that
+            // failed for 5 of 5 fonts (Exo 2, Space Grotesk, Work Sans, Roboto Slab,
+            // Rookery New) and only " Regular" resolved. A miss costs a false negative,
+            // an extra probe costs 0.06 ms, so guess wide.
+            "SamsungOne": ["SamsungOne", "SamsungOne Regular", "SamsungOne-Regular"],
+            "Samsung Sans": ["Samsung Sans", "Samsung Sans Regular", "SamsungSans", "SamsungSans-Regular"],
+            "MiSans": ["MiSans", "MiSans Regular", "MiSans-Regular"],
+            "MiLanProVF": ["MiLanProVF", "MiLanPro", "MiLanPro Regular", "MiLanPro-Regular"],
+            "OPPO Sans": ["OPPO Sans", "OPPO Sans Regular", "OPPOSans", "OPPOSans-Regular"],
+            "OnePlus Sans": ["OnePlus Sans", "OnePlus Sans Regular", "OnePlusSans", "OnePlusSans-Regular"],
+            "HONOR Sans": ["HONOR Sans", "HONOR Sans Regular", "HONORSans", "HONORSans-Regular"],
+            // HarmonyOS Sans ships on Honor too, so this one cannot separate the two
+            // brands on its own -- the model string has to.
+            "Huawei Sans": ["Huawei Sans", "Huawei Sans Regular", "HarmonyOS Sans",
+                            "HarmonyOS Sans Regular", "HarmonyOS_Sans", "HarmonyOS_Sans-Regular"],
+            "vivo Sans": ["vivo Sans", "vivo Sans Regular", "vivoSans", "vivoSans-Regular"],
+            "Realme Sans": ["Realme Sans", "Realme Sans Regular", "RealmeSans", "RealmeSans-Regular"],
+            "Sony Sketch": ["Sony Sketch EF", "Sony Sketch EF Regular", "SonySketchEF"],
+            "LG Smart UI": ["LG Smart UI", "LG Smart UI Regular", "LGSmartUI-Regular"],
+            // Pixel is otherwise plain AOSP: Google Sans is the only thing that sets it
+            // apart, and it is not part of GMS -- neither the NP2 nor the Razr carries
+            // it despite both having Play services. Unverified, no Pixel on hand.
+            "Google Sans": ["Google Sans", "Google Sans Regular", "GoogleSans-Regular",
+                            "Google Sans Text", "Google Sans Text Regular", "GoogleSansText-Regular"],
+            // verified on a Motorola Razr Plus 2023: the files live in /product/fonts,
+            // and the families /product/etc/fonts_customization.xml registers
+            // ("Rookery-Regular", "WorkSans", "moto_time") are invisible to Chrome --
+            // only the name-table entries resolve.
+            "Rookery": ["Rookery New Regular", "RookeryNew-Regular",
+                        "Rookery New Stacked Regular", "RookeryNewStacked-Regular"],
+            "Vertical Time": ["Vertical Time Light"],
+            // Nothing OS -- all three verified on A065
+            "Ndot": ["Ndot 55", "Ndot 57", "Ndot55All", "Ndot57All", "Ndot77JPExtended"],
+            "NType 82": ["NType 82 Regular", "NType 82 Headline", "NType82-Regular", "NType82-Headline"],
+            "Lettera Mono LL": ["Lettera Mono LL", "LetteraMonoLL-Regular"],
+            "Inter Variable": ["Inter Variable", "InterVariable"],
+            // desktop / iOS
+            "Ubuntu": ["Ubuntu", "Ubuntu-Regular"],
+            "DejaVu Sans": ["DejaVu Sans", "DejaVuSans"],
+            "Liberation Sans": ["Liberation Sans", "LiberationSans-Regular"],
+            "Liberation Mono": ["Liberation Mono", "LiberationMono-Regular"],
+            "Segoe UI": ["Segoe UI", "SegoeUI"],
+            "Segoe UI Variable": ["Segoe UI Variable Static Text", "SegoeUIVariableStatic-Text"],
+            "Calibri": ["Calibri", "Calibri-Regular"],
+            "Cambria": ["Cambria", "Cambria-Regular"],
+            "Consolas": ["Consolas", "Consolas-Regular"],
+            "SF Pro Text": ["SF Pro Text", "SFProText-Regular"],
+            "SF Pro Display": ["SF Pro Display", "SFProDisplay-Regular"],
+            "San Francisco": ["San Francisco", "SanFrancisco-Regular"],
+            "Apple SD Gothic Neo": ["Apple SD Gothic Neo", "AppleSDGothicNeo-Regular"],
+          };
 
           const emptyResult = {
             fonts: [],
@@ -1729,119 +1873,20 @@ void main() {
                 sony: 0,
                 lg: 0,
                 motorola: 0,
+                google: 0,
                 nothing: 0,
               },
             },
             debug: {},
           };
 
-          if (!ctx) {
+          if (typeof FontFace !== "function" || !document.fonts) {
             return emptyResult;
           }
 
-          const uniq = (arr) => [...new Set(arr.filter(Boolean).map(x => x.trim()).filter(Boolean))];
-
-          const faceTokens = [
-            "thin",
-            "extralight",
-            "ultralight",
-            "light",
-            "regular",
-            "medium",
-            "semibold",
-            "demibold",
-            "bold",
-            "extrabold",
-            "ultrabold",
-            "black",
-            "extrablack",
-            "italic",
-            "oblique",
-            "condensed",
-            "semicondensed",
-            "extracondensed",
-            "narrow",
-            "variable",
-          ];
-
-          const familyCandidates = (name) => {
-            let s = String(name).trim().replace(/\s+/g, " ");
-            let out = [s];
-            let prev = null;
-
-            while (prev !== s) {
-              prev = s;
-              const next = s.replace(
-                new RegExp(`(?:\\s+(?:${faceTokens.join("|")}))+$`, "i"),
-                ""
-              ).trim();
-              if (next && next !== s) {
-                s = next;
-                out.push(s);
-              }
-            }
-
-            out.push(
-              s
-                .replace(/\s+(thin|extralight|ultralight|light|regular|medium|semibold|demibold|bold|extrabold|ultrabold|black|extrablack|italic|oblique|condensed|semicondensed|extracondensed|narrow|variable)\b/gi, "")
-                .replace(/\s+/g, " ")
-                .trim()
-            );
-
-            return uniq(out);
-          };
-
-          const setFont = (fontExpr) => {
-            ctx.font = `${testSize}px ${fontExpr}`;
-            ctx.textBaseline = "alphabetic";
-            ctx.textAlign = "left";
-          };
-
-          const measure = (fontExpr) => {
-            setFont(fontExpr);
-            const m = ctx.measureText(testString);
-            return {
-              width: m.width,
-              ascent: m.actualBoundingBoxAscent || 0,
-              descent: m.actualBoundingBoxDescent || 0,
-              left: m.actualBoundingBoxLeft || 0,
-              right: m.actualBoundingBoxRight || 0,
-            };
-          };
-
-          const renderHash = (fontExpr) => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            setFont(fontExpr);
-            ctx.fillStyle = "#000";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = "#fff";
-            ctx.fillText(testString, 20, 100);
-            const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-            let hash = 0x811c9dc5;
-            for (let i = 0; i < data.length; i++) {
-              hash ^= data[i];
-              hash = Math.imul(hash, 0x01000193);
-            }
-            return (hash >>> 0).toString(16).padStart(8, "0");
-          };
-
-          const differsEnough = (a, b) => {
-            return (
-              Math.abs(a.width - b.width) > 0.5 ||
-              Math.abs(a.ascent - b.ascent) > 0.5 ||
-              Math.abs(a.descent - b.descent) > 0.5 ||
-              Math.abs(a.left - b.left) > 0.5 ||
-              Math.abs(a.right - b.right) > 0.5
-            );
-          };
-
-          const baseMetrics = {};
-          const baseHashes = {};
-          for (const base of baseFonts) {
-            baseMetrics[base] = measure(base);
-            baseHashes[base] = renderHash(base);
-          }
-
+          // No I/O behind this -- a local() face resolves out of the already-scanned
+          // system font list, ~0.3 ms per probe on the phone. The timeout only guards
+          // against a hung implementation.
           const checkLocalFontFace = async (name, timeoutMs = 250) => {
             try {
               const escaped = String(name).replace(/["\\]/g, "\\$&");
@@ -1857,66 +1902,20 @@ void main() {
             }
           };
 
-          const checkCanvas = (candidates) => {
-            let metrics = false;
-            let pixels = false;
-            let matchedCandidate = null;
-
-            for (const candidate of candidates) {
-              for (const base of baseFonts) {
-                const expr = `"${candidate}", ${base}`;
-                const m = measure(expr);
-                const h = renderHash(expr);
-
-                if (differsEnough(m, baseMetrics[base])) {
-                  metrics = true;
-                  matchedCandidate = candidate;
-                }
-
-                if (h !== baseHashes[base]) {
-                  pixels = true;
-                  matchedCandidate = matchedCandidate || candidate;
-                }
-
-                if (metrics || pixels) {
-                  return { metrics, pixels, matchedCandidate };
-                }
-              }
-            }
-
-            return { metrics, pixels, matchedCandidate };
-          };
-
+          // debug[label] = the alias that actually resolved, so a wrong name in the
+          // table above is visible as a missing label rather than a silent false.
           const debug = {};
-          const foundFonts = [];
 
-          await Promise.all(fontList.map(async (fontName) => {
-            const candidates = familyCandidates(fontName);
-            const fontFace = await checkLocalFontFace(fontName);
-            const canvasResult = checkCanvas(candidates);
-            const detected = fontFace || canvasResult.metrics || canvasResult.pixels;
-            const allMatched = !!(fontFace && canvasResult.metrics && canvasResult.pixels);
-
-            debug[fontName] = {
-              detected,
-              allMatched,
-              fontFace,
-              metrics: canvasResult.metrics,
-              pixels: canvasResult.pixels,
-              matchedCandidate: canvasResult.matchedCandidate,
-              candidates,
-            };
-
-            if (detected) {
-              foundFonts.push(fontName);
+          await Promise.all(Object.entries(FONT_ALIASES).map(async ([label, aliases]) => {
+            for (const alias of aliases) {
+              if (await checkLocalFontFace(alias)) {
+                debug[label] = alias;
+                return;
+              }
             }
           }));
 
-          const filteredDebug = Object.fromEntries(
-            Object.entries(debug).filter(([, value]) => value.detected)
-          );
-
-          foundFonts.sort();
+          const foundFonts = Object.keys(debug).sort();
 
           const foundSet = new Set(foundFonts);
 
@@ -1939,6 +1938,7 @@ void main() {
             sony: 0,
             lg: 0,
             motorola: 0,
+            google: 0,
             nothing: 0,
           };
 
@@ -1961,6 +1961,7 @@ void main() {
             sony: [],
             lg: [],
             motorola: [],
+            google: [],
             nothing: [],
           };
 
@@ -1976,8 +1977,15 @@ void main() {
 
           const platformFontRules = [
             ["Roboto", "android", 5],
-            ["Droid Sans", "android", 3],
-            ["Noto Sans", "android", 1],
+            ["Roboto Flex", "android", 4],
+            ["Carrois Gothic SC", "android", 3],
+            ["Droid Sans Mono", "android", 3],
+            ["Cutive Mono", "android", 2],
+            ["Dancing Script", "android", 2],
+            ["Source Sans Pro", "android", 2],
+            ["Noto Color Emoji", "android", 2],
+            ["Noto Serif", "android", 1],
+            ["Noto Sans CJK", "android", 1],
             ["Ubuntu", "linux", 5],
             ["DejaVu Sans", "linux", 3],
             ["Liberation Sans", "linux", 3],
@@ -2007,6 +2015,8 @@ void main() {
             ["Sony Sketch", "android", 4, "sony", 8],
             ["LG Smart UI", "android", 4, "lg", 8],
             ["Rookery", "android", 4, "motorola", 8],
+            ["Vertical Time", "android", 3, "motorola", 6],
+            ["Google Sans", "android", 4, "google", 8],
             ["Ndot", "android", 5, "nothing", 10],
             ["NType 82", "android", 6, "nothing", 12],
             ["Lettera Mono LL", "android", 3, "nothing", 6],
@@ -2096,7 +2106,7 @@ void main() {
               platform: platformScores,
               vendor: vendorScores,
             },
-            debug: filteredDebug,
+            debug,
           };
         };
 // </neuroslop>
@@ -2218,7 +2228,7 @@ void main() {
           fp.offlineAudioContext = result;
         });
 
-        fp.yandex = await collectYaProbes();
+        Object.assign(fp.ya, await collectYaProbes());
 
         await Promise.all([ice_promise/*, fonts_promise*/, fps_promise, offline_audio_promise]);
 
@@ -2324,96 +2334,6 @@ void main() {
         }
       }
 
-//------------------------------------------------------------------------------------------------------
-        // <neuroslop>
-
-        // 1. Компактная логика рекурсивного сравнения (с Histogram Diff для массивов)
-        function histogram_diff(a, b, path = '', out = []) {
-          if (a === b) return out;
-          if (Array.isArray(a) && Array.isArray(b) && (typeof a[0] === 'string' || typeof b[0] === 'string')) {
-            // Внутренняя рекурсивная функция Гистограммного дифа
-            const histo = (a0, a1, b0, b1) => {
-              if (a0 >= a1 && b0 >= b1) return;
-
-              // Строим гистограмму (частотность) элементов массива A в текущем окне
-              let counts = new Map();
-              for (let i = a0; i < a1; i++) counts.set(a[i], (counts.get(a[i]) || 0) + 1);
-
-              // Ищем "лучший" якорь: элемент с наименьшей частотностью и наибольшей длиной совпадения
-              let bestLcs = 0, bestA = -1, bestB = -1, minCnt = Infinity;
-              for (let j = b0; j < b1; j++) {
-                let cnt = counts.get(b[j]);
-                if (cnt && cnt <= minCnt) {
-                  for (let i = a0; i < a1; i++) {
-                    if (a[i] === b[j]) {
-                      let l = 0;
-                      while (i + l < a1 && j + l < b1 && a[i + l] === b[j + l]) l++;
-                      if (cnt < minCnt || (cnt === minCnt && l > bestLcs)) {
-                        minCnt = cnt; bestLcs = l; bestA = i; bestB = j;
-                      }
-                    }
-                  }
-                }
-              }
-
-              if (bestLcs > 0) {
-                // Нашли якорь — рекурсивно обрабатываем слева и справа от него
-                histo(a0, bestA, b0, bestB);
-                histo(bestA + bestLcs, a1, bestB + bestLcs, b1);
-              } else {
-                // Якорей нет (полное несовпадение). Применяем эвристику по префиксу.
-                let i = a0, j = b0;
-                while (i < a1 || j < b1) {
-                  let s1 = i < a1 ? a[i] : undefined, s2 = j < b1 ? b[j] : undefined;
-                  let p1 = s1 ? String(s1).split(/[ =:]/)[0] : "", p2 = s2 ? String(s2).split(/[ =:]/)[0] : "";
-
-                  if (s1 !== undefined && s2 !== undefined && p1 === p2 && p1) {
-                    out.push([`${path}[${i}]`, s1, s2]); i++; j++; // Изменено
-                  } else if (s1 !== undefined) {
-                    out.push([`${path}[${i}]`, s1, undefined]); i++; // Удалено
-                  } else {
-                    out.push([`${path}[${j}]`, undefined, s2]); j++; // Добавлено
-                  }
-                }
-              }
-            };
-
-            // Запускаем алгоритм на всю длину массивов
-            histo(0, a.length, 0, b.length);
-          } else if (a && b && typeof a === 'object') {
-            new Set([...Object.keys(a), ...Object.keys(b)]).forEach(k =>
-              histogram_diff(a[k], b[k], Array.isArray(a) ? `${path}[${k}]` : (path ? `${path}.${k}` : k), out)
-            );
-          } else {
-            out.push([path || 'root', a, b]);
-          }
-          return out;
-        }
-
-        // 2. Функция подсветки (без изменений)
-        function highlight_diff(v0, v1) {
-          'use strict';
-          let s0 = v0 !== undefined ? JSON.stringify(v0) : "", s1 = v1 !== undefined ? JSON.stringify(v1) : "";
-
-          if (v1 === undefined) return [`<b style="background:#ffb3ba">${s0}</b>`, "", "#ffdce0"];
-          if (v0 === undefined) return ["", `<b style="background:#cdffd8">${s1}</b>`, "#cdffd8"];
-
-          let start = 0, end0 = s0.length, end1 = s1.length;
-          while (s0[start] === s1[start] && start < end0) start++;
-          while (s0[end0-1] === s1[end1-1] && end0 > start && end1 > start) { end0--; end1--; }
-
-          let pre = s0.slice(0, start), suf = s0.slice(end0);
-          return [
-            `${pre}<b style="background:#ffb3ba">${s0.slice(start, end0)}</b>${suf}`,
-            `${pre}<b style="background:#a3f7bf">${s1.slice(start, end1)}</b>${suf}`,
-            "#fff3cd"
-          ];
-        }
-
-        // </neuroslop>
-
-//------------------------------------------------------------------------------------------------------
-
       document.addEventListener('DOMContentLoaded', async () => {
         'use strict';
         let fp = await collect_fp()
@@ -2456,39 +2376,6 @@ void main() {
          </td></tr>`;
 
         let str = "";
-
-        let fingerprint_current = null
-        let fingerprint_orig = null
-
-        if(location.protocol == 'chrome:' || location.protocol == 'file:') {
-          if (location.protocol === 'chrome:') {
-            let fingerprint_orig_str = document.getElementById('fingerprint_json').textContent
-            fingerprint_orig_str = fingerprint_orig_str.replace(/^\s*\/\/.*$/gm, '')
-            fingerprint_orig = JSON.parse(fingerprint_orig_str).fingerprint
-            fingerprint_current = JSON.parse(JSON.stringify(fp))
-          } else {
-            fingerprint_current = await fetch('./fingerprint_razr_regathered_144.0.7559.132.json').then(r => r.json());
-            fingerprint_current = fingerprint_current.fingerprint
-
-            fingerprint_orig = await fetch('./fingerprint_razr_gathered_144.0.7559.132.json').then(r => r.json());
-            fingerprint_orig = fingerprint_orig.fingerprint
-            console.log("fingerprint_current = ", fingerprint_current, " fingerprint_orig = ", fingerprint_orig)
-          }
-
-          const rows = histogram_diff(fingerprint_orig, fingerprint_current);
-
-          let diff_str = "<table>"
-          diff_str += `<tr><th>path</th><th>original value</th><th>gathered value</th></tr>`
-
-          for (const [p, v0, v1] of rows) {
-            let [d0, d1, bg] = highlight_diff(v0, v1);
-            diff_str += `<tr style="background:${bg}"><td>${p}</td><td>${d0}</td><td>${d1}</td></tr>`;
-          }
-
-          diff_str += "</table>"
-
-          str += details(`diff table: passed fingerprint vs gathered: ${rows.length} rows`, diff_str);
-        }
 
         str += "<table>"
 
@@ -2578,13 +2465,25 @@ void main() {
 
         str += th("canvas2d");
         str += `<tr><td>canvas2d_hash</td><td>${JSON.stringify(fp.canvas2d_hash)}</td></tr>`
-        str += `<tr><td>canvas2d_fjordbank_hash</td><td>${JSON.stringify(fp.canvas2d_fjordbank_hash)}</td></tr>`
-        str += `<tr><td>canvas2d_fjordbank_dataurl</td><td>${fp.canvas2d_fjordbank_dataurl.length + " chars"}</td></tr>`
-        str += `<tr><td>canvas2d_fjordbank_calcTime (ya render time, ms)</td><td>${JSON.stringify(fp.canvas2d_fjordbank_calcTime)}</td></tr>`
+        str += `<tr><td>ya.tmgrdfrend_2d_fjordbank.hash</td><td>${JSON.stringify(fp.ya.tmgrdfrend_2d_fjordbank.hash)}</td></tr>`
+        str += `<tr><td>ya.tmgrdfrend_2d_fjordbank.dataurl</td><td>${(fp.ya.tmgrdfrend_2d_fjordbank.dataurl || "").length + " chars"}</td></tr>`
+        str += `<tr><td>ya.tmgrdfrend_2d_fjordbank.duration (render time, ms)</td><td>${JSON.stringify(fp.ya.tmgrdfrend_2d_fjordbank.duration)}</td></tr>`
 
         str += "<tr><td><canvas id=canvas_1 width=200 height=50></canvas></td><td id=hash_1></td></tr>"
         str += "<tr><td><canvas id=canvas_2 width=200 height=50></canvas></td><td id=hash_2></td></tr>"
         str += "<tr><td><img id=fjordbank_img></td><td id=fjordbank_hash></td></tr>"
+        str += `<tr><td>ya.tmgrdfrend_3d_triangle.hash</td><td>${JSON.stringify(fp.ya.tmgrdfrend_3d_triangle.hash)}</td></tr>`
+        str += `<tr><td>ya.tmgrdfrend_3d_triangle.dataurl</td><td>${(fp.ya.tmgrdfrend_3d_triangle.dataurl || "").length + " chars"}</td></tr>`
+        str += `<tr><td>ya.tmgrdfrend_3d_triangle.duration (render time, ms)</td><td>${JSON.stringify(fp.ya.tmgrdfrend_3d_triangle.duration)}</td></tr>`
+        str += "<tr><td><img id=tmgrdfrend_triangle_img style='background:#888'></td><td id=tmgrdfrend_triangle_hash_cell></td></tr>"
+
+        // captcha_smart Picasso — one row per seeded 300x300 painting
+        for (const [i, pic] of (fp.ya.picasso_935_372 || []).entries()) {
+          str += `<tr><td>ya.picasso_935_372[${i}] seed=${pic.seed} (${i === 0 ? '5' : '10'} rounds)</td>`
+              +  `<td>murmur128 = <b>${pic.result}</b><br>calcTime = ${pic.calcTime} ms, dataurl = ${(pic.dataurl || "").length} chars</td></tr>`
+          str += `<tr><td><img src="${pic.dataurl}" style="max-width:300px;background:#888"></td>`
+              +  `<td>seed ${pic.seed} — the seed drives both the painting and the hash</td></tr>`
+        }
 
         str += th("canvas3d");
         str += `<tr><td>canvas3d_hash</td><td>${JSON.stringify(fp.canvas3d_hash)}</td></tr>`
@@ -2644,16 +2543,15 @@ void main() {
         // ==== ya smartcaptcha probes (fast-payload tmgrdfrend.fp.js) ====
         str += th("⚠ yandex smartcaptcha probes (fast-payload)")
 
-        const ya = fp.yandex || {};
+        const ya = fp.ya || {};
 
         str += `<tr><td>m4: Widevine (com.widevine.alpha, no robustness, 500ms race)</td><td>${JSON.stringify(ya.widevine_m4)}</td></tr>`
 
-        str += `<tr><td colspan=2 style="padding-top:8px"><b>WebGL — j1 / j2 / a5 (WebGL1 context only, never webgl2)</b></td></tr>`
+        str += `<tr><td colspan=2 style="padding-top:8px"><b>WebGL — j1 / j2 (WebGL1 context only, never webgl2; a5 is rendered in the canvas3d section)</b></td></tr>`
         if (ya.md5_selftest !== "900150983cd24fb0d6963f7d28e17f72") {
           str += `<tr><td>⚠ md5 selftest</td><td><b>BROKEN: ${ya.md5_selftest}</b></td></tr>`
         }
-        const yj1 = ya.webgl_j1, yj2 = ya.webgl_j2, ya5 = ya.webglRender_a5;
-        str += `<tr><td>a5: rotating-triangle render md5</td><td>${ya5 ? `<b>${ya5.md5}</b> (dataURL ${ya5.dataURL_len} B)` : JSON.stringify(ya5)}</td></tr>`
+        const yj1 = ya.webgl_j1, yj2 = ya.webgl_j2;
         if (yj1 && typeof yj1 === 'object') {
           for (let [k, v] of Object.entries(yj1)) {
             str += `<tr><td>j1.${k}</td><td>${JSON.stringify(v)}</td></tr>`
@@ -2837,20 +2735,16 @@ void main() {
 
         str += "</table>"
 
-        let fonts_str = "<table border=1><tr><th>Font</th><th>fontFace</th><th>metrics</th><th>pixels</th><th>detected</th><th>allMatched</th></tr>";
+        // fonts_debug is { label: the local() name that resolved }, so the table says
+        // which alias hit -- a wrong name in FONT_ALIASES shows up as a missing row.
+        let fonts_str = "<table border=1><tr><th>Font</th><th>matched local() name</th></tr>";
         const fonts_debug_entries = Object.entries(fp.fonts_debug || {}).sort(([a], [b]) => a.localeCompare(b));
 
-        for (const [font, info] of fonts_debug_entries) {
-          const rowColor = info.allMatched ? '#cdffd8' : (info.detected ? '#fff3cd' : '#ffdce0');
-          const mark = (value) => value ? 'yes' : 'no';
+        for (const [font, matched] of fonts_debug_entries) {
           fonts_str +=
-            `<tr style="background:${rowColor}">
+            `<tr style="background:#cdffd8">
               <td style="font-family:'${font}'">${font}</td>
-              <td>${mark(info.fontFace)}</td>
-              <td>${mark(info.metrics)}</td>
-              <td>${mark(info.pixels)}</td>
-              <td>${mark(info.detected)}</td>
-              <td>${mark(info.allMatched)}</td>
+              <td>${matched}</td>
             </tr>`;
         }
         fonts_str += '</table>';
@@ -2859,34 +2753,41 @@ void main() {
 
         content.innerHTML = str
 
-        let fingerprint1 = generateCanvas2dFingerprint(document.getElementById("canvas_1"));
+        // Two canvases drawn by the SAME probe: differing hashes mean the canvas noise
+        // is per-element random instead of seeded, and the prev/current pair catches
+        // noise that is not stable across reloads. Both must equal fp.canvas2d_hash.
+        let fingerprint1 = collectCanvas2dHash(document.getElementById("canvas_1"));
         let prev_fingerprint1_hash = localStorage.getItem("canvasFingerprint1");
-        localStorage.setItem("canvasFingerprint1", fingerprint1.hash);
-        // console.log('Canvas Fingerprint Hash 1:', fingerprint1.hash);
+        localStorage.setItem("canvasFingerprint1", fingerprint1);
 
-        let fingerprint2 = generateCanvas2dFingerprint(document.getElementById("canvas_2"));
+        let fingerprint2 = collectCanvas2dHash(document.getElementById("canvas_2"));
         let prev_fingerprint2_hash = localStorage.getItem("canvasFingerprint2");
-        localStorage.setItem("canvasFingerprint2", fingerprint2.hash);
-        // console.log('Canvas Fingerprint Hash 2:', fingerprint2.hash);
+        localStorage.setItem("canvasFingerprint2", fingerprint2);
 
-        document.getElementById("hash_1").innerHTML = `current hash = ${fingerprint1.hash} prev hash = ${prev_fingerprint1_hash}`
-        document.getElementById("hash_2").innerHTML = `current hash = ${fingerprint2.hash} prev hash = ${prev_fingerprint2_hash}`
+        document.getElementById("hash_1").innerHTML = `current hash = ${fingerprint1} prev hash = ${prev_fingerprint1_hash}`
+        document.getElementById("hash_2").innerHTML = `current hash = ${fingerprint2} prev hash = ${prev_fingerprint2_hash}`
 
-        document.getElementById("fjordbank_img").src = fp.canvas2d_fjordbank_dataurl;
-        document.getElementById("fjordbank_hash").innerHTML = `hash = ${fp.canvas2d_fjordbank_hash}`
+        if (fp.ya.tmgrdfrend_2d_fjordbank.dataurl) {
+          document.getElementById("fjordbank_img").src = fp.ya.tmgrdfrend_2d_fjordbank.dataurl;
+        }
+        document.getElementById("fjordbank_hash").innerHTML = `hash = ${fp.ya.tmgrdfrend_2d_fjordbank.hash}`
 
-        let fingerprint3 = generateCanvas3dFingerprint(document.getElementById("canvas_3"));
+        if (fp.ya.tmgrdfrend_3d_triangle.dataurl) {
+          document.getElementById("tmgrdfrend_triangle_img").src = fp.ya.tmgrdfrend_3d_triangle.dataurl;
+        }
+        document.getElementById("tmgrdfrend_triangle_hash_cell").innerHTML = `hash = ${fp.ya.tmgrdfrend_3d_triangle.hash}`
+
+        // Same pairing for WebGL; both must equal fp.canvas3d_hash.
+        let fingerprint3 = collectCanvas3dHash(document.getElementById("canvas_3"));
         let prev_fingerprint3_hash = localStorage.getItem("canvasFingerprint3");
-        localStorage.setItem("canvasFingerprint3", fingerprint3.hash);
-//        console.log('Canvas Fingerprint Hash 3:', fingerprint3.hash);
+        localStorage.setItem("canvasFingerprint3", fingerprint3);
 
-        let fingerprint4 = generateCanvas3dFingerprint(document.getElementById("canvas_4"));
+        let fingerprint4 = collectCanvas3dHash(document.getElementById("canvas_4"));
         let prev_fingerprint4_hash = localStorage.getItem("canvasFingerprint4");
-        localStorage.setItem("canvasFingerprint4", fingerprint4.hash);
-//        console.log('Canvas Fingerprint Hash 4:', fingerprint4.hash);
+        localStorage.setItem("canvasFingerprint4", fingerprint4);
 
-        document.getElementById("hash_3").innerHTML = `current hash = ${fingerprint3.hash} prev hash = ${prev_fingerprint3_hash}`
-        document.getElementById("hash_4").innerHTML = `current hash = ${fingerprint4.hash} prev hash = ${prev_fingerprint4_hash}`
+        document.getElementById("hash_3").innerHTML = `current hash = ${fingerprint3} prev hash = ${prev_fingerprint3_hash}`
+        document.getElementById("hash_4").innerHTML = `current hash = ${fingerprint4} prev hash = ${prev_fingerprint4_hash}`
 
       });
 
@@ -2898,62 +2799,7 @@ void main() {
         return ('0000000' + (hash >>> 0).toString(16)).substr(-8)
       }
 
-      function generateCanvas2dFingerprint(canvas) {
-        const ctx = canvas.getContext('2d');
 
-        ctx.textBaseline = 'top';
-        ctx.font = '14px Arial';
-        ctx.fillStyle = '#f60';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#069';
-        ctx.fillText('Canvas Fingerprint: @', 5, 15);
-
-        ctx.strokeStyle = '#fff';
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(canvas.width, canvas.height);
-        ctx.moveTo(0, canvas.height);
-        ctx.lineTo(canvas.width, 0);
-        ctx.stroke();
-
-        const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-        gradient.addColorStop(0, '#f00');
-        gradient.addColorStop(0.5, '#0f0');
-        gradient.addColorStop(1, '#00f');
-        ctx.fillStyle = gradient;
-        ctx.globalAlpha = 0.3;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        const dataURL = canvas.toDataURL();
-
-        return {
-          dataURL: dataURL,
-          hash: hashMini(dataURL),
-          details: {
-            renderer: ctx.getContextAttributes(),
-            textMetrics: ctx.measureText('Test'),
-            supported: {
-              filter: typeof ctx.filter !== 'undefined',
-              textDrawing: typeof ctx.fillText !== 'undefined'
-            }
-          }
-        };
-      }
-
-      function generateCanvas3dFingerprint(canvas) {
-        gl = canvas.getContext('webgl2')
-        gl.clearColor(0.47, 0.7, 0.78, 1)
-        gl.clear(gl.COLOR_BUFFER_BIT)
-        dataURL = gl.canvas.toDataURL()
-        // console.log(dataURL)
-        const pixels = new Uint8Array(canvas.width * canvas.height * 4)
-        gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
-        // console.log(pixels.toBase64())
-        return {
-          dataURL: pixels.toBase64(),
-          hash: hashMini(pixels.toBase64()),
-        };
-      }
 
     </script>
   </head>
